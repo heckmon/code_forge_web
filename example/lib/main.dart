@@ -35,9 +35,8 @@ class _MyAppState extends State<MyApp> {
       home: Scaffold(
         body: SafeArea(
           child: CodeForgeWeb(
-            textDirection: TextDirection.rtl,
             fileUrl:
-                "https://raw.githubusercontent.com/alifcommunity/Alif/refs/heads/main/examples/XOGame.alif",
+                "https://raw.githubusercontent.com/heckmon/code_forge/refs/heads/main/lib/code_forge/syntax_highlighter.dart",
             controller: controller,
             textStyle: GoogleFonts.jetBrainsMono(),
             innerPadding: EdgeInsets.only(top: 10),
