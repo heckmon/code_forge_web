@@ -452,6 +452,64 @@ class CodeForgeWebController implements DeltaTextInputClient {
   set currentlySelectedSuggestion(int? value) =>
       selectedSuggestionNotifier.value = value;
 
+  /// Clear LSP suggestions, hover info, code actions and signature help.
+  void clearAllSuggestions() {
+    suggestionsNotifier.value = null;
+    selectedSuggestionNotifier.value = null;
+    signatureNotifier.value = null;
+    codeActionsNotifier.value = null;
+  }
+
+  /// Accepts the currently selected suggestion and inserts it at the cursor position.
+  ///
+  /// For mobile devices, uses [currentlySelectedSuggestion] to determine which
+  /// suggestion to accept. For desktop/non-mobile, uses the provided [selectedIndex].
+  ///
+  /// The method handles different suggestion types:
+  /// - [LspCompletion]: Uses the label property
+  /// - [Map]: Uses 'insertText' or 'label' key
+  /// - [String]: Uses the string directly
+  ///
+  /// After accepting, clears the suggestions and resets the selection index.
+  ///
+  /// Parameters:
+  /// - [selectedIndex]: The index of the selected suggestion for desktop/non-mobile.
+  ///   Defaults to 0 if not provided.
+  void acceptSuggestion({int selectedIndex = 0}) {
+    final suggestions = suggestionsNotifier.value;
+    if (suggestions == null || suggestions.isEmpty) return;
+
+    final isMobile =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+
+    int? index;
+    if (isMobile && currentlySelectedSuggestion != null) {
+      index = currentlySelectedSuggestion;
+    } else {
+      index = selectedIndex;
+    }
+
+    if (index == null || index < 0 || index >= suggestions.length) return;
+
+    final suggestion = suggestions[index];
+    String textToInsert;
+
+    if (suggestion is LspCompletion) {
+      textToInsert = suggestion.label;
+    } else if (suggestion is Map) {
+      textToInsert =
+          (suggestion['insertText'] ?? suggestion['label']) as String;
+    } else {
+      textToInsert = suggestion.toString();
+    }
+
+    insertAtCurrentCursor(textToInsert, replaceTypedChar: true);
+
+    suggestionsNotifier.value = null;
+    currentlySelectedSuggestion = null;
+  }
+
   /// Adds a line decoration to the editor.
   ///
   /// Line decorations can highlight code ranges with background colors,
@@ -3622,7 +3680,6 @@ class CodeForgeWebController implements DeltaTextInputClient {
   }
 
   static Set<String> _extractWords(String text) {
-    // Include Arabic (\u0600-\u06FF), Extended Arabic (\u08A0-\u08FF), and Hebrew (\u0590-\u05FF)
     final regExp = RegExp(r'[\w\u0600-\u06FF\u08A0-\u08FF\u0590-\u05FF]+');
     final set = <String>{};
     for (final match in regExp.allMatches(text)) {

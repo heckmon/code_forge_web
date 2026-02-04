@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:vector_math/vector_math_64.dart' show Vector3;
+
 import '../LSP/lsp.dart';
 import 'controller.dart';
 import 'find_controller.dart';
@@ -1374,659 +1376,804 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                   RawScrollbar(
                     controller: _vscrollController,
                     thumbVisibility: _isHovering,
-                    child: RawScrollbar(
-                      thumbVisibility: _isHovering,
-                      controller: _hscrollController,
-                      child: GestureDetector(
-                        onTap: () {
-                          _focusNode.requestFocus();
-                          if (_contextMenuOffsetNotifier.value.dx >= 0) {
-                            _contextMenuOffsetNotifier.value = const Offset(
-                              -1,
-                              -1,
-                            );
-                          }
-                          _suggestionNotifier.value = null;
-                          _lspSignatureNotifier.value = null;
-                        },
-                        onDoubleTapDown: (details) {
-                          if (_controller.text.isNotEmpty) return;
-                          _contextMenuOffsetNotifier.value =
-                              details.localPosition;
-                        },
-                        child: MouseRegion(
-                          onEnter: (event) {
-                            if (mounted) setState(() => _isHovering = true);
-                          },
-                          onExit: (event) {
-                            if (mounted) setState(() => _isHovering = false);
-                          },
-                          child: ValueListenableBuilder(
-                            valueListenable: _selectionActiveNotifier,
-                            builder: (context, selVal, child) {
-                              return TwoDimensionalScrollable(
-                                horizontalDetails: ScrollableDetails.horizontal(
-                                  controller: _hscrollController,
-                                  physics: selVal
-                                      ? const NeverScrollableScrollPhysics()
-                                      : const ClampingScrollPhysics(),
-                                ),
-                                verticalDetails: ScrollableDetails.vertical(
-                                  controller: _vscrollController,
-                                  physics: selVal
-                                      ? const NeverScrollableScrollPhysics()
-                                      : const ClampingScrollPhysics(),
-                                ),
-                                viewportBuilder: (_, voffset, hoffset) => CustomViewport(
-                                  verticalOffset: voffset,
-                                  verticalAxisDirection: AxisDirection.down,
-                                  horizontalOffset: hoffset,
-                                  horizontalAxisDirection: AxisDirection.right,
-                                  mainAxis: Axis.vertical,
-                                  lineWrap: widget.lineWrap,
-                                  delegate: TwoDimensionalChildBuilderDelegate(
-                                    maxXIndex: 0,
-                                    maxYIndex: 0,
-                                    builder: (_, vic) {
-                                      return Focus(
-                                        focusNode: _focusNode,
-                                        onKeyEvent: (node, event) {
-                                          final isCtrlAltPressed =
-                                              (HardwareKeyboard
-                                                      .instance
-                                                      .isControlPressed ||
+                    child: Transform(
+                      alignment: Alignment.center,
+                      transform: widget.textDirection == TextDirection.rtl
+                          ? (Matrix4.identity()
+                              ..scaleByVector3(Vector3(-1.0, 1.0, 1.0)))
+                          : Matrix4.identity(),
+                      child: RawScrollbar(
+                        thumbVisibility: _isHovering,
+                        controller: _hscrollController,
+                        child: Transform(
+                          alignment: Alignment.center,
+                          transform: widget.textDirection == TextDirection.rtl
+                              ? (Matrix4.identity()
+                                  ..scaleByVector3(Vector3(-1.0, 1.0, 1.0)))
+                              : Matrix4.identity(),
+                          child: GestureDetector(
+                            onTap: () {
+                              _focusNode.requestFocus();
+                              if (_contextMenuOffsetNotifier.value.dx >= 0) {
+                                _contextMenuOffsetNotifier.value = const Offset(
+                                  -1,
+                                  -1,
+                                );
+                              }
+                              _suggestionNotifier.value = null;
+                              _lspSignatureNotifier.value = null;
+                            },
+                            onDoubleTapDown: (details) {
+                              if (_controller.text.isNotEmpty) return;
+                              _contextMenuOffsetNotifier.value =
+                                  details.localPosition;
+                            },
+                            child: MouseRegion(
+                              onEnter: (event) {
+                                if (mounted) setState(() => _isHovering = true);
+                              },
+                              onExit: (event) {
+                                if (mounted)
+                                  setState(() => _isHovering = false);
+                              },
+                              child: ValueListenableBuilder(
+                                valueListenable: _selectionActiveNotifier,
+                                builder: (context, selVal, child) {
+                                  return TwoDimensionalScrollable(
+                                    horizontalDetails: ScrollableDetails.horizontal(
+                                      controller: _hscrollController,
+                                      physics: selVal
+                                          ? const NeverScrollableScrollPhysics()
+                                          : const ClampingScrollPhysics(),
+                                    ),
+                                    verticalDetails: ScrollableDetails.vertical(
+                                      controller: _vscrollController,
+                                      physics: selVal
+                                          ? const NeverScrollableScrollPhysics()
+                                          : const ClampingScrollPhysics(),
+                                    ),
+                                    viewportBuilder: (_, voffset, hoffset) => CustomViewport(
+                                      verticalOffset: voffset,
+                                      verticalAxisDirection: AxisDirection.down,
+                                      horizontalOffset: hoffset,
+                                      horizontalAxisDirection:
+                                          widget.textDirection ==
+                                              TextDirection.rtl
+                                          ? AxisDirection.left
+                                          : AxisDirection.right,
+                                      mainAxis: Axis.vertical,
+                                      lineWrap: widget.lineWrap,
+                                      delegate: TwoDimensionalChildBuilderDelegate(
+                                        maxXIndex: 0,
+                                        maxYIndex: 0,
+                                        builder: (_, vic) {
+                                          return Focus(
+                                            focusNode: _focusNode,
+                                            onKeyEvent: (node, event) {
+                                              final isCtrlAltPressed =
+                                                  (HardwareKeyboard
+                                                          .instance
+                                                          .isControlPressed ||
+                                                      HardwareKeyboard
+                                                          .instance
+                                                          .isMetaPressed) &&
                                                   HardwareKeyboard
                                                       .instance
-                                                      .isMetaPressed) &&
-                                              HardwareKeyboard
-                                                  .instance
-                                                  .isAltPressed;
+                                                      .isAltPressed;
 
-                                          if (event is KeyDownEvent &&
-                                              isCtrlAltPressed &&
-                                              !_controller.inlayHintsVisible) {
-                                            _controller.showInlayHints();
-                                            return KeyEventResult.handled;
-                                          }
+                                              if (event is KeyDownEvent &&
+                                                  isCtrlAltPressed &&
+                                                  !_controller
+                                                      .inlayHintsVisible) {
+                                                _controller.showInlayHints();
+                                                return KeyEventResult.handled;
+                                              }
 
-                                          if (event is KeyUpEvent &&
-                                              _controller.inlayHintsVisible) {
-                                            final isStillCtrlAlt =
-                                                (HardwareKeyboard
+                                              if (event is KeyUpEvent &&
+                                                  _controller
+                                                      .inlayHintsVisible) {
+                                                final isStillCtrlAlt =
+                                                    (HardwareKeyboard
+                                                            .instance
+                                                            .isControlPressed ||
+                                                        HardwareKeyboard
+                                                            .instance
+                                                            .isMetaPressed) &&
+                                                    HardwareKeyboard
+                                                        .instance
+                                                        .isAltPressed;
+                                                if (!isStillCtrlAlt) {
+                                                  _controller.hideInlayHints();
+                                                  return KeyEventResult.handled;
+                                                }
+                                              }
+
+                                              if (event is KeyDownEvent ||
+                                                  event is KeyRepeatEvent) {
+                                                final isShiftPressed =
+                                                    HardwareKeyboard
+                                                        .instance
+                                                        .isShiftPressed;
+                                                final isCtrlPressed =
+                                                    HardwareKeyboard
                                                         .instance
                                                         .isControlPressed ||
                                                     HardwareKeyboard
                                                         .instance
-                                                        .isMetaPressed) &&
-                                                HardwareKeyboard
-                                                    .instance
-                                                    .isAltPressed;
-                                            if (!isStillCtrlAlt) {
-                                              _controller.hideInlayHints();
-                                              return KeyEventResult.handled;
-                                            }
-                                          }
-
-                                          if (event is KeyDownEvent ||
-                                              event is KeyRepeatEvent) {
-                                            final isShiftPressed =
-                                                HardwareKeyboard
-                                                    .instance
-                                                    .isShiftPressed;
-                                            final isCtrlPressed =
-                                                HardwareKeyboard
-                                                    .instance
-                                                    .isControlPressed ||
-                                                HardwareKeyboard
-                                                    .instance
-                                                    .isMetaPressed;
-                                            if (_suggestionNotifier.value !=
-                                                    null &&
-                                                _suggestionNotifier
-                                                    .value!
-                                                    .isNotEmpty) {
-                                              final suggestions =
-                                                  _suggestionNotifier.value!;
-                                              switch (event.logicalKey) {
-                                                case LogicalKeyboardKey
-                                                    .arrowDown:
-                                                  if (mounted) {
-                                                    setState(() {
-                                                      _sugSelIndex =
-                                                          (_sugSelIndex + 1) %
-                                                          suggestions.length;
-                                                      _scrollToSelectedSuggestion();
-                                                    });
-                                                  }
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.arrowUp:
-                                                  if (mounted) {
-                                                    setState(() {
-                                                      _sugSelIndex =
-                                                          (_sugSelIndex -
-                                                              1 +
+                                                        .isMetaPressed;
+                                                if (_suggestionNotifier.value !=
+                                                        null &&
+                                                    _suggestionNotifier
+                                                        .value!
+                                                        .isNotEmpty) {
+                                                  final suggestions =
+                                                      _suggestionNotifier
+                                                          .value!;
+                                                  switch (event.logicalKey) {
+                                                    case LogicalKeyboardKey
+                                                        .arrowDown:
+                                                      if (mounted) {
+                                                        setState(() {
+                                                          _sugSelIndex =
+                                                              (_sugSelIndex +
+                                                                  1) %
                                                               suggestions
-                                                                  .length) %
-                                                          suggestions.length;
-                                                      _scrollToSelectedSuggestion();
-                                                    });
+                                                                  .length;
+                                                          _scrollToSelectedSuggestion();
+                                                        });
+                                                      }
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowUp:
+                                                      if (mounted) {
+                                                        setState(() {
+                                                          _sugSelIndex =
+                                                              (_sugSelIndex -
+                                                                  1 +
+                                                                  suggestions
+                                                                      .length) %
+                                                              suggestions
+                                                                  .length;
+                                                          _scrollToSelectedSuggestion();
+                                                        });
+                                                      }
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .enter:
+                                                    case LogicalKeyboardKey.tab:
+                                                      _acceptSuggestion();
+                                                      if (_extraText
+                                                          .isNotEmpty) {
+                                                        _controller
+                                                            .applyWorkspaceEdit(
+                                                              _extraText,
+                                                            );
+                                                      }
+                                                      setState(() {
+                                                        _isSignatureInvoked =
+                                                            true;
+                                                      });
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .escape:
+                                                      _suggestionNotifier
+                                                              .value =
+                                                          null;
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    default:
+                                                      break;
                                                   }
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.enter:
-                                                case LogicalKeyboardKey.tab:
-                                                  _acceptSuggestion();
-                                                  if (_extraText.isNotEmpty) {
+                                                }
+
+                                                if (_lspActionNotifier.value !=
+                                                        null &&
+                                                    _lspActionOffsetNotifier
+                                                            .value !=
+                                                        null &&
+                                                    _lspActionNotifier
+                                                        .value!
+                                                        .isNotEmpty) {
+                                                  final actions =
+                                                      _lspActionNotifier.value!;
+                                                  switch (event.logicalKey) {
+                                                    case LogicalKeyboardKey
+                                                        .arrowDown:
+                                                      if (mounted) {
+                                                        setState(() {
+                                                          _actionSelIndex =
+                                                              (_actionSelIndex +
+                                                                  1) %
+                                                              actions.length;
+                                                          _scrollToSelectedAction();
+                                                        });
+                                                      }
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowUp:
+                                                      if (mounted) {
+                                                        setState(() {
+                                                          _actionSelIndex =
+                                                              (_actionSelIndex -
+                                                                  1 +
+                                                                  actions
+                                                                      .length) %
+                                                              actions.length;
+                                                          _scrollToSelectedAction();
+                                                        });
+                                                      }
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .enter:
+                                                    case LogicalKeyboardKey.tab:
+                                                      (() async {
+                                                        await _controller
+                                                            .applyWorkspaceEdit(
+                                                              _lspActionNotifier
+                                                                  .value![_actionSelIndex],
+                                                            );
+                                                      })();
+                                                      _lspActionNotifier.value =
+                                                          null;
+                                                      _lspActionOffsetNotifier
+                                                              .value =
+                                                          null;
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .escape:
+                                                      _lspActionNotifier.value =
+                                                          null;
+                                                      _lspActionOffsetNotifier
+                                                              .value =
+                                                          null;
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    default:
+                                                      break;
+                                                  }
+                                                }
+
+                                                if (isCtrlPressed &&
+                                                    isShiftPressed) {
+                                                  switch (event.logicalKey) {
+                                                    case LogicalKeyboardKey
+                                                        .space:
+                                                      setState(() {
+                                                        _isSignatureInvoked =
+                                                            true;
+                                                      });
+                                                      (() async => await _controller
+                                                          .callSignatureHelp())();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowUp:
+                                                      _controller.moveLineUp();
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowDown:
+                                                      _controller
+                                                          .moveLineDown();
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowLeft:
+                                                      if (widget
+                                                              .textDirection ==
+                                                          TextDirection.rtl) {
+                                                        _moveWordRight(true);
+                                                      } else {
+                                                        _moveWordLeft(true);
+                                                      }
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowRight:
+                                                      if (widget
+                                                              .textDirection ==
+                                                          TextDirection.rtl) {
+                                                        _moveWordLeft(true);
+                                                      } else {
+                                                        _moveWordRight(true);
+                                                      }
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    default:
+                                                      break;
+                                                  }
+                                                }
+
+                                                if (isCtrlPressed) {
+                                                  switch (event.logicalKey) {
+                                                    case LogicalKeyboardKey
+                                                        .keyF:
+                                                      final isAlt =
+                                                          HardwareKeyboard
+                                                              .instance
+                                                              .isAltPressed;
+                                                      _findController.isActive =
+                                                          true;
+                                                      _findController
+                                                              .isReplaceMode =
+                                                          isAlt;
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .keyH:
+                                                      if (!HardwareKeyboard
+                                                          .instance
+                                                          .isMetaPressed) {
+                                                        _findController
+                                                                .isActive =
+                                                            true;
+                                                        _findController
+                                                                .isReplaceMode =
+                                                            true;
+
+                                                        return KeyEventResult
+                                                            .handled;
+                                                      }
+                                                      break;
+                                                    case LogicalKeyboardKey
+                                                        .keyC:
+                                                      _controller.copy();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .keyX:
+                                                      if (_readOnly) {
+                                                        return KeyEventResult
+                                                            .handled;
+                                                      }
+                                                      _controller.cut();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .keyV:
+                                                      if (_readOnly) {
+                                                        return KeyEventResult
+                                                            .handled;
+                                                      }
+                                                      _controller.paste();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .keyA:
+                                                      _controller.selectAll();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .keyD:
+                                                      if (_readOnly) {
+                                                        return KeyEventResult
+                                                            .handled;
+                                                      }
+                                                      _controller
+                                                          .duplicateLine();
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .keyZ:
+                                                      if (_readOnly) {
+                                                        return KeyEventResult
+                                                            .handled;
+                                                      }
+                                                      if (_undoRedoController
+                                                          .canUndo) {
+                                                        _undoRedoController
+                                                            .undo();
+                                                        _commonKeyFunctions();
+                                                      }
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .keyY:
+                                                      if (_readOnly) {
+                                                        return KeyEventResult
+                                                            .handled;
+                                                      }
+                                                      if (_undoRedoController
+                                                          .canRedo) {
+                                                        _undoRedoController
+                                                            .redo();
+                                                        _commonKeyFunctions();
+                                                      }
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .backspace:
+                                                      if (_readOnly) {
+                                                        return KeyEventResult
+                                                            .handled;
+                                                      }
+                                                      _deleteWordBackward();
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .delete:
+                                                      if (_readOnly) {
+                                                        return KeyEventResult
+                                                            .handled;
+                                                      }
+                                                      _deleteWordForward();
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowLeft:
+                                                      if (widget
+                                                              .textDirection ==
+                                                          TextDirection.rtl) {
+                                                        _moveWordRight(false);
+                                                      } else {
+                                                        _moveWordLeft(false);
+                                                      }
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowRight:
+                                                      if (widget
+                                                              .textDirection ==
+                                                          TextDirection.rtl) {
+                                                        _moveWordLeft(false);
+                                                      } else {
+                                                        _moveWordRight(false);
+                                                      }
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .period:
+                                                      (() async {
+                                                        _suggestionNotifier
+                                                                .value =
+                                                            null;
+                                                        await _fetchCodeActionsForCurrentPosition();
+                                                      })();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .home:
+                                                      _controller
+                                                          .pressDocumentHomeKey(
+                                                            isShiftPressed:
+                                                                isShiftPressed,
+                                                          );
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey.end:
+                                                      _controller
+                                                          .pressDocumentEndKey(
+                                                            isShiftPressed:
+                                                                isShiftPressed,
+                                                          );
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    default:
+                                                      break;
+                                                  }
+                                                }
+
+                                                if (isShiftPressed &&
+                                                    !isCtrlPressed) {
+                                                  switch (event.logicalKey) {
+                                                    case LogicalKeyboardKey.tab:
+                                                      if (_readOnly) {
+                                                        return KeyEventResult
+                                                            .handled;
+                                                      }
+                                                      _controller.unindent();
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowLeft:
+                                                      _handleArrowLeft(true);
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowRight:
+                                                      _handleArrowRight(true);
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowUp:
+                                                      _controller
+                                                          .pressUpArrowKey(
+                                                            isShiftPressed:
+                                                                isShiftPressed,
+                                                          );
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowDown:
+                                                      _controller
+                                                          .pressDownArrowKey(
+                                                            isShiftPressed:
+                                                                isShiftPressed,
+                                                          );
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .home:
+                                                      _controller.pressHomeKey(
+                                                        isShiftPressed:
+                                                            isShiftPressed,
+                                                      );
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey.end:
+                                                      _controller.pressEndKey(
+                                                        isShiftPressed:
+                                                            isShiftPressed,
+                                                      );
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    default:
+                                                      break;
+                                                  }
+                                                }
+
+                                                switch (event.logicalKey) {
+                                                  case LogicalKeyboardKey.space:
                                                     _controller
-                                                        .applyWorkspaceEdit(
-                                                          _extraText,
+                                                        .insertAtCurrentCursor(
+                                                          " ",
                                                         );
-                                                  }
-                                                  setState(() {
-                                                    _isSignatureInvoked = true;
-                                                  });
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.escape:
-                                                  _suggestionNotifier.value =
-                                                      null;
-                                                  return KeyEventResult.handled;
-                                                default:
-                                                  break;
-                                              }
-                                            }
+                                                    return KeyEventResult
+                                                        .handled;
+                                                  case LogicalKeyboardKey
+                                                      .backspace:
+                                                    if (_readOnly) {
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    }
+                                                    _controller.backspace();
+                                                    if (_suggestionNotifier
+                                                            .value !=
+                                                        null) {
+                                                      _suggestionNotifier
+                                                              .value =
+                                                          null;
+                                                    }
+                                                    _commonKeyFunctions();
+                                                    return KeyEventResult
+                                                        .handled;
 
-                                            if (_lspActionNotifier.value !=
-                                                    null &&
-                                                _lspActionOffsetNotifier
-                                                        .value !=
-                                                    null &&
-                                                _lspActionNotifier
-                                                    .value!
-                                                    .isNotEmpty) {
-                                              final actions =
-                                                  _lspActionNotifier.value!;
-                                              switch (event.logicalKey) {
-                                                case LogicalKeyboardKey
-                                                    .arrowDown:
-                                                  if (mounted) {
-                                                    setState(() {
-                                                      _actionSelIndex =
-                                                          (_actionSelIndex +
-                                                              1) %
-                                                          actions.length;
-                                                      _scrollToSelectedAction();
-                                                    });
-                                                  }
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.arrowUp:
-                                                  if (mounted) {
-                                                    setState(() {
-                                                      _actionSelIndex =
-                                                          (_actionSelIndex -
-                                                              1 +
-                                                              actions.length) %
-                                                          actions.length;
-                                                      _scrollToSelectedAction();
-                                                    });
-                                                  }
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.enter:
-                                                case LogicalKeyboardKey.tab:
-                                                  (() async {
-                                                    await _controller
-                                                        .applyWorkspaceEdit(
-                                                          _lspActionNotifier
-                                                              .value![_actionSelIndex],
+                                                  case LogicalKeyboardKey
+                                                      .delete:
+                                                    if (_readOnly) {
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    }
+                                                    _controller.delete();
+                                                    if (_suggestionNotifier
+                                                            .value !=
+                                                        null) {
+                                                      _suggestionNotifier
+                                                              .value =
+                                                          null;
+                                                    }
+                                                    _commonKeyFunctions();
+                                                    return KeyEventResult
+                                                        .handled;
+
+                                                  case LogicalKeyboardKey
+                                                      .arrowDown:
+                                                    _controller
+                                                        .pressDownArrowKey(
+                                                          isShiftPressed:
+                                                              isShiftPressed,
                                                         );
-                                                  })();
-                                                  _lspActionNotifier.value =
-                                                      null;
-                                                  _lspActionOffsetNotifier
-                                                          .value =
-                                                      null;
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.escape:
-                                                  _lspActionNotifier.value =
-                                                      null;
-                                                  _lspActionOffsetNotifier
-                                                          .value =
-                                                      null;
-                                                  return KeyEventResult.handled;
-                                                default:
-                                                  break;
-                                              }
-                                            }
+                                                    _commonKeyFunctions();
+                                                    return KeyEventResult
+                                                        .handled;
 
-                                            if (isCtrlPressed &&
-                                                isShiftPressed) {
-                                              switch (event.logicalKey) {
-                                                case LogicalKeyboardKey.space:
-                                                  setState(() {
-                                                    _isSignatureInvoked = true;
-                                                  });
-                                                  (() async => await _controller
-                                                      .callSignatureHelp())();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.arrowUp:
-                                                  _controller.moveLineUp();
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey
-                                                    .arrowDown:
-                                                  _controller.moveLineDown();
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey
-                                                    .arrowLeft:
-                                                  if (widget.textDirection ==
-                                                      TextDirection.rtl) {
-                                                    _moveWordRight(true);
-                                                  } else {
-                                                    _moveWordLeft(true);
-                                                  }
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey
-                                                    .arrowRight:
-                                                  if (widget.textDirection ==
-                                                      TextDirection.rtl) {
-                                                    _moveWordLeft(true);
-                                                  } else {
-                                                    _moveWordRight(true);
-                                                  }
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                default:
-                                                  break;
-                                              }
-                                            }
+                                                  case LogicalKeyboardKey
+                                                      .arrowUp:
+                                                    _controller.pressUpArrowKey(
+                                                      isShiftPressed:
+                                                          isShiftPressed,
+                                                    );
+                                                    _commonKeyFunctions();
+                                                    return KeyEventResult
+                                                        .handled;
 
-                                            if (isCtrlPressed) {
-                                              switch (event.logicalKey) {
-                                                case LogicalKeyboardKey.keyF:
-                                                  final isAlt = HardwareKeyboard
-                                                      .instance
-                                                      .isAltPressed;
-                                                  _findController.isActive =
-                                                      true;
-                                                  _findController
-                                                          .isReplaceMode =
-                                                      isAlt;
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.keyH:
-                                                  if (!HardwareKeyboard
-                                                      .instance
-                                                      .isMetaPressed) {
+                                                  case LogicalKeyboardKey
+                                                      .arrowRight:
+                                                    _handleArrowRight(
+                                                      isShiftPressed,
+                                                    );
+                                                    _commonKeyFunctions();
+                                                    return KeyEventResult
+                                                        .handled;
+
+                                                  case LogicalKeyboardKey
+                                                      .arrowLeft:
+                                                    _handleArrowLeft(
+                                                      isShiftPressed,
+                                                    );
+                                                    _commonKeyFunctions();
+                                                    return KeyEventResult
+                                                        .handled;
+
+                                                  case LogicalKeyboardKey.home:
+                                                    _handleHomeKey(
+                                                      isShiftPressed,
+                                                    );
+                                                    _commonKeyFunctions();
+                                                    return KeyEventResult
+                                                        .handled;
+
+                                                  case LogicalKeyboardKey.end:
+                                                    _handleEndKey(
+                                                      isShiftPressed,
+                                                    );
+                                                    _commonKeyFunctions();
+                                                    return KeyEventResult
+                                                        .handled;
+
+                                                  case LogicalKeyboardKey
+                                                      .escape:
+                                                    _hoverTimer?.cancel();
+                                                    _lspSignatureNotifier
+                                                            .value =
+                                                        null;
+                                                    _contextMenuOffsetNotifier
+                                                        .value = const Offset(
+                                                      -1,
+                                                      -1,
+                                                    );
                                                     _findController.isActive =
-                                                        true;
+                                                        false;
                                                     _findController
                                                             .isReplaceMode =
-                                                        true;
-
-                                                    return KeyEventResult
-                                                        .handled;
-                                                  }
-                                                  break;
-                                                case LogicalKeyboardKey.keyC:
-                                                  _controller.copy();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.keyX:
-                                                  if (_readOnly) {
-                                                    return KeyEventResult
-                                                        .handled;
-                                                  }
-                                                  _controller.cut();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.keyV:
-                                                  if (_readOnly) {
-                                                    return KeyEventResult
-                                                        .handled;
-                                                  }
-                                                  _controller.paste();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.keyA:
-                                                  _controller.selectAll();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.keyD:
-                                                  if (_readOnly) {
-                                                    return KeyEventResult
-                                                        .handled;
-                                                  }
-                                                  _controller.duplicateLine();
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.keyZ:
-                                                  if (_readOnly) {
-                                                    return KeyEventResult
-                                                        .handled;
-                                                  }
-                                                  if (_undoRedoController
-                                                      .canUndo) {
-                                                    _undoRedoController.undo();
-                                                    _commonKeyFunctions();
-                                                  }
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.keyY:
-                                                  if (_readOnly) {
-                                                    return KeyEventResult
-                                                        .handled;
-                                                  }
-                                                  if (_undoRedoController
-                                                      .canRedo) {
-                                                    _undoRedoController.redo();
-                                                    _commonKeyFunctions();
-                                                  }
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey
-                                                    .backspace:
-                                                  if (_readOnly) {
-                                                    return KeyEventResult
-                                                        .handled;
-                                                  }
-                                                  _deleteWordBackward();
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.delete:
-                                                  if (_readOnly) {
-                                                    return KeyEventResult
-                                                        .handled;
-                                                  }
-                                                  _deleteWordForward();
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey
-                                                    .arrowLeft:
-                                                  if (widget.textDirection ==
-                                                      TextDirection.rtl) {
-                                                    _moveWordRight(false);
-                                                  } else {
-                                                    _moveWordLeft(false);
-                                                  }
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey
-                                                    .arrowRight:
-                                                  if (widget.textDirection ==
-                                                      TextDirection.rtl) {
-                                                    _moveWordLeft(false);
-                                                  } else {
-                                                    _moveWordRight(false);
-                                                  }
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.period:
-                                                  (() async {
+                                                        false;
+                                                    _aiNotifier.value = null;
                                                     _suggestionNotifier.value =
                                                         null;
-                                                    await _fetchCodeActionsForCurrentPosition();
-                                                  })();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.home:
-                                                  _controller
-                                                      .pressDocumentHomeKey(
-                                                        isShiftPressed:
-                                                            isShiftPressed,
-                                                      );
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.end:
-                                                  _controller
-                                                      .pressDocumentEndKey(
-                                                        isShiftPressed:
-                                                            isShiftPressed,
-                                                      );
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                default:
-                                                  break;
-                                              }
-                                            }
-
-                                            if (isShiftPressed &&
-                                                !isCtrlPressed) {
-                                              switch (event.logicalKey) {
-                                                case LogicalKeyboardKey.tab:
-                                                  if (_readOnly) {
+                                                    _hoverNotifier.value = null;
+                                                    setState(() {
+                                                      _isSignatureInvoked =
+                                                          false;
+                                                    });
                                                     return KeyEventResult
                                                         .handled;
-                                                  }
-                                                  _controller.unindent();
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey
-                                                    .arrowLeft:
-                                                  _handleArrowLeft(true);
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey
-                                                    .arrowRight:
-                                                  _handleArrowRight(true);
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.arrowUp:
-                                                  _controller.pressUpArrowKey(
-                                                    isShiftPressed:
-                                                        isShiftPressed,
-                                                  );
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey
-                                                    .arrowDown:
-                                                  _controller.pressDownArrowKey(
-                                                    isShiftPressed:
-                                                        isShiftPressed,
-                                                  );
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.home:
-                                                  _controller.pressHomeKey(
-                                                    isShiftPressed:
-                                                        isShiftPressed,
-                                                  );
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                case LogicalKeyboardKey.end:
-                                                  _controller.pressEndKey(
-                                                    isShiftPressed:
-                                                        isShiftPressed,
-                                                  );
-                                                  _commonKeyFunctions();
-                                                  return KeyEventResult.handled;
-                                                default:
-                                                  break;
+
+                                                  case LogicalKeyboardKey.tab:
+                                                    if (_readOnly) {
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    }
+                                                    final ghost =
+                                                        _controller.ghostText;
+                                                    if (ghost != null &&
+                                                        !ghost.shouldPersist) {
+                                                      _acceptControllerGhostText();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    }
+                                                    if (_aiNotifier.value !=
+                                                        null) {
+                                                      _acceptGhostText();
+                                                    } else if (_suggestionNotifier
+                                                            .value ==
+                                                        null) {
+                                                      _controller.indent();
+                                                      _commonKeyFunctions();
+                                                    }
+                                                    return KeyEventResult
+                                                        .handled;
+
+                                                  case LogicalKeyboardKey.enter:
+                                                    if (_aiNotifier.value !=
+                                                        null) {
+                                                      _aiNotifier.value = null;
+                                                    }
+                                                    break;
+                                                  default:
+                                                }
                                               }
-                                            }
-
-                                            switch (event.logicalKey) {
-                                              case LogicalKeyboardKey.space:
-                                                _controller
-                                                    .insertAtCurrentCursor(" ");
-                                                return KeyEventResult.handled;
-                                              case LogicalKeyboardKey.backspace:
-                                                if (_readOnly) {
-                                                  return KeyEventResult.handled;
-                                                }
-                                                _controller.backspace();
-                                                if (_suggestionNotifier.value !=
-                                                    null) {
-                                                  _suggestionNotifier.value =
-                                                      null;
-                                                }
-                                                _commonKeyFunctions();
-                                                return KeyEventResult.handled;
-
-                                              case LogicalKeyboardKey.delete:
-                                                if (_readOnly) {
-                                                  return KeyEventResult.handled;
-                                                }
-                                                _controller.delete();
-                                                if (_suggestionNotifier.value !=
-                                                    null) {
-                                                  _suggestionNotifier.value =
-                                                      null;
-                                                }
-                                                _commonKeyFunctions();
-                                                return KeyEventResult.handled;
-
-                                              case LogicalKeyboardKey.arrowDown:
-                                                _controller.pressDownArrowKey(
-                                                  isShiftPressed:
-                                                      isShiftPressed,
-                                                );
-                                                _commonKeyFunctions();
-                                                return KeyEventResult.handled;
-
-                                              case LogicalKeyboardKey.arrowUp:
-                                                _controller.pressUpArrowKey(
-                                                  isShiftPressed:
-                                                      isShiftPressed,
-                                                );
-                                                _commonKeyFunctions();
-                                                return KeyEventResult.handled;
-
-                                              case LogicalKeyboardKey
-                                                  .arrowRight:
-                                                _handleArrowRight(
-                                                  isShiftPressed,
-                                                );
-                                                _commonKeyFunctions();
-                                                return KeyEventResult.handled;
-
-                                              case LogicalKeyboardKey.arrowLeft:
-                                                _handleArrowLeft(
-                                                  isShiftPressed,
-                                                );
-                                                _commonKeyFunctions();
-                                                return KeyEventResult.handled;
-
-                                              case LogicalKeyboardKey.home:
-                                                _handleHomeKey(isShiftPressed);
-                                                _commonKeyFunctions();
-                                                return KeyEventResult.handled;
-
-                                              case LogicalKeyboardKey.end:
-                                                _handleEndKey(isShiftPressed);
-                                                _commonKeyFunctions();
-                                                return KeyEventResult.handled;
-
-                                              case LogicalKeyboardKey.escape:
-                                                _hoverTimer?.cancel();
-                                                _lspSignatureNotifier.value =
-                                                    null;
-                                                _contextMenuOffsetNotifier
-                                                    .value = const Offset(
-                                                  -1,
-                                                  -1,
-                                                );
-                                                _findController.isActive =
-                                                    false;
-                                                _findController.isReplaceMode =
-                                                    false;
-                                                _aiNotifier.value = null;
-                                                _suggestionNotifier.value =
-                                                    null;
-                                                _hoverNotifier.value = null;
-                                                setState(() {
-                                                  _isSignatureInvoked = false;
-                                                });
-                                                return KeyEventResult.handled;
-
-                                              case LogicalKeyboardKey.tab:
-                                                if (_readOnly) {
-                                                  return KeyEventResult.handled;
-                                                }
-                                                final ghost =
-                                                    _controller.ghostText;
-                                                if (ghost != null &&
-                                                    !ghost.shouldPersist) {
-                                                  _acceptControllerGhostText();
-                                                  return KeyEventResult.handled;
-                                                }
-                                                if (_aiNotifier.value != null) {
-                                                  _acceptGhostText();
-                                                } else if (_suggestionNotifier
-                                                        .value ==
-                                                    null) {
-                                                  _controller.indent();
-                                                  _commonKeyFunctions();
-                                                }
-                                                return KeyEventResult.handled;
-
-                                              case LogicalKeyboardKey.enter:
-                                                if (_aiNotifier.value != null) {
-                                                  _aiNotifier.value = null;
-                                                }
-                                                break;
-                                              default:
-                                            }
-                                          }
-                                          return KeyEventResult.ignored;
+                                              return KeyEventResult.ignored;
+                                            },
+                                            child: _CodeField(
+                                              context: context,
+                                              controller: _controller,
+                                              editorTheme: _editorTheme,
+                                              language: _language,
+                                              languageId: _controller
+                                                  .lspConfig
+                                                  ?.languageId,
+                                              lspConfig: _controller.lspConfig,
+                                              semanticTokens: _semanticTokens,
+                                              semanticTokensVersion:
+                                                  _semanticTokensVersion,
+                                              innerPadding: widget.innerPadding,
+                                              vscrollController:
+                                                  _vscrollController,
+                                              hscrollController:
+                                                  _hscrollController,
+                                              focusNode: _focusNode,
+                                              readOnly: _readOnly,
+                                              caretBlinkController:
+                                                  _caretBlinkController,
+                                              lineHighlightController:
+                                                  _lineHighlightController,
+                                              textStyle: widget.textStyle,
+                                              enableFolding:
+                                                  widget.enableFolding,
+                                              enableGuideLines:
+                                                  widget.enableGuideLines,
+                                              enableGutter: widget.enableGutter,
+                                              enableGutterDivider:
+                                                  widget.enableGutterDivider,
+                                              gutterStyle: _gutterStyle,
+                                              selectionStyle: _selectionStyle,
+                                              diagnostics:
+                                                  _diagnosticsNotifier.value,
+                                              isMobile: _isMobile,
+                                              selectionActiveNotifier:
+                                                  _selectionActiveNotifier,
+                                              contextMenuOffsetNotifier:
+                                                  _contextMenuOffsetNotifier,
+                                              hoverNotifier: _hoverNotifier,
+                                              hoverContentNotifier:
+                                                  _hoverContentNotifier,
+                                              lineWrap: widget.lineWrap,
+                                              offsetNotifier: _offsetNotifier,
+                                              aiNotifier: _aiNotifier,
+                                              aiOffsetNotifier:
+                                                  _aiOffsetNotifier,
+                                              isHoveringPopup: _isHoveringPopup,
+                                              suggestionNotifier:
+                                                  _suggestionNotifier,
+                                              ghostTextStyle:
+                                                  widget.ghostTextStyle,
+                                              matchHighlightStyle:
+                                                  widget.matchHighlightStyle,
+                                              lspActionNotifier:
+                                                  _lspActionNotifier,
+                                              lspActionOffsetNotifier:
+                                                  _lspActionOffsetNotifier,
+                                              signatureNotifier:
+                                                  _lspSignatureNotifier,
+                                              filePath: _filePath,
+                                              textDirection:
+                                                  widget.textDirection,
+                                              onHoverSetByTap: () {
+                                                _hoverSetByTap = true;
+                                              },
+                                            ),
+                                          );
                                         },
-                                        child: _CodeField(
-                                          context: context,
-                                          controller: _controller,
-                                          editorTheme: _editorTheme,
-                                          language: _language,
-                                          languageId:
-                                              _controller.lspConfig?.languageId,
-                                          lspConfig: _controller.lspConfig,
-                                          semanticTokens: _semanticTokens,
-                                          semanticTokensVersion:
-                                              _semanticTokensVersion,
-                                          innerPadding: widget.innerPadding,
-                                          vscrollController: _vscrollController,
-                                          hscrollController: _hscrollController,
-                                          focusNode: _focusNode,
-                                          readOnly: _readOnly,
-                                          caretBlinkController:
-                                              _caretBlinkController,
-                                          lineHighlightController:
-                                              _lineHighlightController,
-                                          textStyle: widget.textStyle,
-                                          enableFolding: widget.enableFolding,
-                                          enableGuideLines:
-                                              widget.enableGuideLines,
-                                          enableGutter: widget.enableGutter,
-                                          enableGutterDivider:
-                                              widget.enableGutterDivider,
-                                          gutterStyle: _gutterStyle,
-                                          selectionStyle: _selectionStyle,
-                                          diagnostics:
-                                              _diagnosticsNotifier.value,
-                                          isMobile: _isMobile,
-                                          selectionActiveNotifier:
-                                              _selectionActiveNotifier,
-                                          contextMenuOffsetNotifier:
-                                              _contextMenuOffsetNotifier,
-                                          hoverNotifier: _hoverNotifier,
-                                          hoverContentNotifier:
-                                              _hoverContentNotifier,
-                                          lineWrap: widget.lineWrap,
-                                          offsetNotifier: _offsetNotifier,
-                                          aiNotifier: _aiNotifier,
-                                          aiOffsetNotifier: _aiOffsetNotifier,
-                                          isHoveringPopup: _isHoveringPopup,
-                                          suggestionNotifier:
-                                              _suggestionNotifier,
-                                          ghostTextStyle: widget.ghostTextStyle,
-                                          matchHighlightStyle:
-                                              widget.matchHighlightStyle,
-                                          lspActionNotifier: _lspActionNotifier,
-                                          lspActionOffsetNotifier:
-                                              _lspActionOffsetNotifier,
-                                          signatureNotifier:
-                                              _lspSignatureNotifier,
-                                          filePath: _filePath,
-                                          textDirection: widget.textDirection,
-                                          onHoverSetByTap: () {
-                                            _hoverSetByTap = true;
-                                          },
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              );
-                            },
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -3756,20 +3903,19 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     hscrollController.addListener(() {
       if (suggestionNotifier.value != null && offsetNotifier.value.dx >= 0) {
         offsetNotifier.value = Offset(
-          _getCaretInfo().offset.dx - hscrollController.offset,
+          _getCaretInfo().offset.dx - _effectiveHScroll,
           offsetNotifier.value.dy,
         );
       }
 
       if (lspActionOffsetNotifier.value != null) {
         lspActionOffsetNotifier.value = Offset(
-          _getCaretInfo().offset.dx - hscrollController.offset,
+          _getCaretInfo().offset.dx - _effectiveHScroll,
           lspActionOffsetNotifier.value!.dy,
         );
       }
 
       if (hoverNotifier.value != null) {
-        // Recalculate hover position based on the hovered line/char
         final lineChar = hoverNotifier.value!.$2;
         final line = lineChar['line']!;
         final char = lineChar['character']!;
@@ -3793,11 +3939,11 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
                   _gutterWidth -
                   (innerPadding?.right ?? 0) -
                   hoveredX +
-                  (lineWrap ? 0 : hscrollController.offset)
+                  (lineWrap ? 0 : _effectiveHScroll)
             : hoveredX +
                   _gutterWidth +
                   (innerPadding?.left ?? 0) -
-                  (lineWrap ? 0 : hscrollController.offset);
+                  (lineWrap ? 0 : _effectiveHScroll);
 
         hoverNotifier.value = (
           Offset(screenX, hoverNotifier.value!.$1.dy),
@@ -3891,6 +4037,12 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   }
 
   bool get isRTL => _textDirection == TextDirection.rtl;
+
+  double get _effectiveHScroll {
+    if (!isRTL || lineWrap) return hscrollController.offset;
+    if (!hscrollController.hasClients) return 0;
+    return -hscrollController.offset;
+  }
 
   CodeSelectionStyle get selectionStyle => _selectionStyle;
 
@@ -4049,7 +4201,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     final caretY = caretInfo.offset.dy + (innerPadding?.top ?? 0);
     final caretHeight = caretInfo.height;
     final vScrollOffset = vscrollController.offset;
-    final hScrollOffset = hscrollController.offset;
+    final hScrollOffset = _effectiveHScroll;
     final viewportHeight =
         vscrollController.position.viewportDimension - _bottomPaddingHeight;
     final viewportWidth =
@@ -4074,16 +4226,17 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     }
 
     if (isRTL) {
-      if (caretX > hScrollOffset + viewportWidth - _gutterWidth) {
-        final targetOffset = caretX - viewportWidth + _gutterWidth;
-        hscrollController.jumpTo(
-          targetOffset.clamp(0, hscrollController.position.maxScrollExtent),
-        );
-      } else if (caretX - 1.5 < hScrollOffset) {
-        final targetOffset = caretX - 1.5;
-        hscrollController.jumpTo(
-          targetOffset.clamp(0, hscrollController.position.maxScrollExtent),
-        );
+      final maxScroll = hscrollController.position.maxScrollExtent;
+      final effectiveScroll = _effectiveHScroll;
+
+      if (caretX > effectiveScroll + viewportWidth - _gutterWidth) {
+        final targetEffective = caretX - viewportWidth + _gutterWidth;
+        final rawOffset = -targetEffective;
+        hscrollController.jumpTo(rawOffset.clamp(0, maxScroll));
+      } else if (caretX - 1.5 < effectiveScroll) {
+        final targetEffective = caretX - 1.5;
+        final rawOffset = -targetEffective;
+        hscrollController.jumpTo(rawOffset.clamp(0, maxScroll));
       }
     } else {
       if (caretX < hScrollOffset + (innerPadding?.left ?? 0) + _gutterWidth) {
@@ -5514,11 +5667,10 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       // For RTL, position text from the left edge since paragraph handles RTL alignment internally
       // The paragraph width equals content area width, so text is right-aligned within it
       final textX = isRTL
-          ? (innerPadding?.left ?? 0) -
-                (lineWrap ? 0 : hscrollController.offset)
+          ? (innerPadding?.left ?? 0) - (lineWrap ? 0 : _effectiveHScroll)
           : _gutterWidth +
                 (innerPadding?.left ?? 0) -
-                (lineWrap ? 0 : hscrollController.offset);
+                (lineWrap ? 0 : _effectiveHScroll);
 
       canvas.drawParagraph(
         paragraph,
@@ -5542,11 +5694,11 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
                   contentWidth -
                   paraWidth -
                   foldIndicator.longestLine -
-                  (lineWrap ? 0 : hscrollController.offset)
+                  (lineWrap ? 0 : _effectiveHScroll)
             : _gutterWidth +
                   (innerPadding?.left ?? 0) +
                   paraWidth -
-                  (lineWrap ? 0 : hscrollController.offset);
+                  (lineWrap ? 0 : _effectiveHScroll);
         canvas.drawParagraph(
           foldIndicator,
           offset +
@@ -5668,7 +5820,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     if (focusNode.hasFocus && caretBlinkController.value > 0.5) {
       final caretInfo = _getCaretInfo();
 
-      final scroll = lineWrap ? 0.0 : hscrollController.offset;
+      final scroll = lineWrap ? 0.0 : _effectiveHScroll;
       final textX = isRTL
           ? (innerPadding?.left ?? 0) - scroll
           : _gutterWidth + (innerPadding?.left ?? 0) - scroll;
@@ -5700,7 +5852,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
           final handleSize = caretInfo.height;
 
           // Use same positioning logic as caret
-          final scroll = lineWrap ? 0.0 : hscrollController.offset;
+          final scroll = lineWrap ? 0.0 : _effectiveHScroll;
           final textX = isRTL
               ? (innerPadding?.left ?? 0) - scroll
               : _gutterWidth + (innerPadding?.left ?? 0) - scroll;
@@ -6418,12 +6570,12 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
                 _gutterWidth -
                 (innerPadding?.right ?? 0) -
                 block.guideX +
-                (lineWrap ? 0 : hscrollController.offset)
+                (lineWrap ? 0 : _effectiveHScroll)
           : offset.dx +
                 _gutterWidth +
                 (innerPadding?.left ?? 0) +
                 block.guideX -
-                (lineWrap ? 0 : hscrollController.offset);
+                (lineWrap ? 0 : _effectiveHScroll);
 
       if (isRTL) {
         if (screenGuideX > offset.dx + size.width - _gutterWidth ||
@@ -6540,7 +6692,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     final boxY = lineY + box.top;
     final colorBoxOffset = _getColorBoxOffsetForLine(lineIndex, columnIndex);
 
-    final scroll = lineWrap ? 0.0 : hscrollController.offset;
+    final scroll = lineWrap ? 0.0 : _effectiveHScroll;
     final textX = isRTL
         ? (innerPadding?.left ?? 0) - scroll
         : _gutterWidth + (innerPadding?.left ?? 0) - scroll;
@@ -6665,12 +6817,12 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
                     _gutterWidth -
                     (innerPadding?.right ?? 0) -
                     box.right +
-                    (lineWrap ? 0 : hscrollController.offset)
+                    (lineWrap ? 0 : _effectiveHScroll)
               : offset.dx +
                     _gutterWidth +
                     (innerPadding?.left ?? 0) +
                     box.left -
-                    (lineWrap ? 0 : hscrollController.offset);
+                    (lineWrap ? 0 : _effectiveHScroll);
           final screenY =
               offset.dy +
               (innerPadding?.top ?? 0) +
@@ -6795,7 +6947,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
 
         final lineY = _getLineYOffset(lineIndex, hasActiveFolds);
 
-        final scroll = lineWrap ? 0.0 : hscrollController.offset;
+        final scroll = lineWrap ? 0.0 : _effectiveHScroll;
         final textX = isRTL
             ? (innerPadding?.left ?? 0) - scroll
             : _gutterWidth + (innerPadding?.left ?? 0) - scroll;
@@ -6962,7 +7114,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
         lineSelEnd,
       );
 
-      final scroll = lineWrap ? 0.0 : hscrollController.offset;
+      final scroll = lineWrap ? 0.0 : _effectiveHScroll;
       final textX = isRTL
           ? (innerPadding?.left ?? 0) - scroll
           : _gutterWidth + (innerPadding?.left ?? 0) - scroll;
@@ -7095,7 +7247,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
         );
         final boxes = para.getBoxesForRange(lineHighStart, lineHighEnd);
 
-        final scroll = lineWrap ? 0.0 : hscrollController.offset;
+        final scroll = lineWrap ? 0.0 : _effectiveHScroll;
         final textX = isRTL
             ? (innerPadding?.left ?? 0) - scroll
             : _gutterWidth + (innerPadding?.left ?? 0) - scroll;
@@ -7140,7 +7292,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     final paragraphWidth = lineWrap
         ? _wrapWidth
         : (isRTL ? contentWidth : null);
-    final scroll = lineWrap ? 0.0 : hscrollController.offset;
+    final scroll = lineWrap ? 0.0 : _effectiveHScroll;
     final textX = isRTL
         ? (innerPadding?.left ?? 0) - scroll
         : _gutterWidth + (innerPadding?.left ?? 0) - scroll;
@@ -7348,13 +7500,13 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
                 _gutterWidth -
                 (innerPadding?.right ?? 0) -
                 cursorX +
-                (lineWrap ? 0 : hscrollController.offset) -
+                (lineWrap ? 0 : _effectiveHScroll) -
                 firstLineGhostWidth
           : offset.dx +
                 _gutterWidth +
                 (innerPadding?.left ?? 0) +
                 cursorX -
-                (lineWrap ? 0 : hscrollController.offset);
+                (lineWrap ? 0 : _effectiveHScroll);
 
       final bgColor = editorTheme['root']?.backgroundColor ?? Colors.black;
       final originalPara = _paragraphCache[cursorLine];
@@ -7432,13 +7584,13 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
                 _gutterWidth -
                 (innerPadding?.right ?? 0) -
                 cursorX +
-                (lineWrap ? 0 : hscrollController.offset) -
+                (lineWrap ? 0 : _effectiveHScroll) -
                 firstGhostWidth
           : offset.dx +
                 _gutterWidth +
                 (innerPadding?.left ?? 0) +
                 cursorX -
-                (lineWrap ? 0 : hscrollController.offset);
+                (lineWrap ? 0 : _effectiveHScroll);
 
       final bgColor = editorTheme['root']?.backgroundColor ?? Colors.black;
       final originalPara = _paragraphCache[cursorLine];
@@ -7496,12 +7648,12 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
                 size.width -
                 _gutterWidth -
                 (innerPadding?.right ?? 0) +
-                (lineWrap ? 0 : hscrollController.offset) -
+                (lineWrap ? 0 : _effectiveHScroll) -
                 paraWidth
           : offset.dx +
                 _gutterWidth +
                 (innerPadding?.left ?? 0) -
-                (lineWrap ? 0 : hscrollController.offset);
+                (lineWrap ? 0 : _effectiveHScroll);
 
       if (screenY + _lineHeight < offset.dy ||
           screenY > offset.dy + vscrollController.position.viewportDimension) {
@@ -7598,7 +7750,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
               offset.dx +
               _gutterWidth +
               (innerPadding?.left ?? 0) -
-              (lineWrap ? 0 : hscrollController.offset);
+              (lineWrap ? 0 : _effectiveHScroll);
 
           switch (decoration.type) {
             case LineDecorationType.background:
@@ -7709,7 +7861,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
         offset.dx +
         _gutterWidth +
         (innerPadding?.left ?? 0) -
-        (lineWrap ? 0 : hscrollController.offset);
+        (lineWrap ? 0 : _effectiveHScroll);
 
     final highlightColor =
         (textStyle?.color ?? editorTheme['root']?.color ?? Colors.yellow)
@@ -7889,7 +8041,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
           _gutterWidth +
           (innerPadding?.left ?? 0) +
           cursorX -
-          (lineWrap ? 0 : hscrollController.offset);
+          (lineWrap ? 0 : _effectiveHScroll);
 
       final clampedCol = cursorCol.clamp(0, lineText.length);
       final bgColor = editorTheme['root']?.backgroundColor ?? Colors.black;
@@ -7967,7 +8119,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
           _gutterWidth +
           (innerPadding?.left ?? 0) +
           cursorX -
-          (lineWrap ? 0 : hscrollController.offset);
+          (lineWrap ? 0 : _effectiveHScroll);
 
       final bgColor = editorTheme['root']?.backgroundColor ?? Colors.black;
       final originalPara = _paragraphCache[cursorLine];
@@ -8004,7 +8156,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
           offset.dx +
           _gutterWidth +
           (innerPadding?.left ?? 0) -
-          (lineWrap ? 0 : hscrollController.offset);
+          (lineWrap ? 0 : _effectiveHScroll);
 
       if (screenY + _lineHeight < offset.dy ||
           screenY > offset.dy + vscrollController.position.viewportDimension) {
@@ -8142,7 +8294,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
           offset.dx +
           _gutterWidth +
           (innerPadding?.left ?? 0) -
-          (lineWrap ? 0 : hscrollController.offset);
+          (lineWrap ? 0 : _effectiveHScroll);
 
       final firstHint = lineHints.first;
       double firstHintX = 0;
@@ -8351,7 +8503,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
           offset.dx +
           _gutterWidth +
           (innerPadding?.left ?? 0) -
-          (lineWrap ? 0 : hscrollController.offset);
+          (lineWrap ? 0 : _effectiveHScroll);
 
       final firstColor = lineColors.first;
       double firstColorX = 0;
@@ -8611,11 +8763,11 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     final contentX = isRTL
         ? localPosition.dx -
               (innerPadding?.left ?? 0) +
-              (lineWrap ? 0 : hscrollController.offset)
+              (lineWrap ? 0 : _effectiveHScroll)
         : localPosition.dx -
               _gutterWidth -
               (innerPadding?.left ?? 0) +
-              (lineWrap ? 0 : hscrollController.offset);
+              (lineWrap ? 0 : _effectiveHScroll);
     final contentPosition = Offset(
       contentX,
       localPosition.dy - (innerPadding?.top ?? 0) + vscrollController.offset,
