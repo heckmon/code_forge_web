@@ -318,6 +318,7 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
   late final VoidCallback _signatureListener;
   late final VoidCallback _hoverListener;
   late final VoidCallback _isHoveringPopupListener;
+  late final VoidCallback _selectedSuggestionListener;
 
   @override
   void initState() {
@@ -506,7 +507,6 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
 
     Future.microtask(CustomIcons.loadAllCustomFonts);
 
-    // Validate that mutually exclusive options aren't used together
     if (widget.fileUrl != null && widget.initialText != null) {
       throw ArgumentError(
         'Cannot provide both fileUrl and initialText to CodeForgeWeb.',
@@ -624,6 +624,18 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
       }
     };
     _isHoveringPopup.addListener(_isHoveringPopupListener);
+
+    _selectedSuggestionListener = () {
+      if (!mounted) return;
+      final selected = _controller.selectedSuggestionNotifier.value;
+      if (selected != null && _isMobile) {
+        setState(() {
+          _sugSelIndex = selected;
+        });
+        _scrollToSelectedSuggestion();
+      }
+    };
+    _controller.selectedSuggestionNotifier.addListener(_selectedSuggestionListener);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.autoFocus) {
@@ -1413,8 +1425,9 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                 if (mounted) setState(() => _isHovering = true);
                               },
                               onExit: (event) {
-                                if (mounted)
+                                if (mounted) {
                                   setState(() => _isHovering = false);
+                                }
                               },
                               child: ValueListenableBuilder(
                                 valueListenable: _selectionActiveNotifier,
@@ -1424,7 +1437,11 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                       controller: _hscrollController,
                                       physics: selVal
                                           ? const NeverScrollableScrollPhysics()
-                                          : const ClampingScrollPhysics(),
+                                          : RTLAwareScrollPhysics(
+                                              isRTL: widget.textDirection ==
+                                                  TextDirection.rtl,
+                                              isMobile: _isMobile,
+                                            ),
                                     ),
                                     verticalDetails: ScrollableDetails.vertical(
                                       controller: _vscrollController,
@@ -9218,4 +9235,44 @@ class FoldRange {
 
   @override
   int get hashCode => startIndex.hashCode ^ endIndex.hashCode;
+}
+
+/// Custom scroll physics that reverses horizontal drag direction for RTL mode on mobile.
+class RTLAwareScrollPhysics extends ClampingScrollPhysics {
+  final bool isRTL;
+  final bool isMobile;
+
+  const RTLAwareScrollPhysics({
+    super.parent,
+    required this.isRTL,
+    required this.isMobile,
+  });
+
+  @override
+  RTLAwareScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return RTLAwareScrollPhysics(
+      parent: buildParent(ancestor),
+      isRTL: isRTL,
+      isMobile: isMobile,
+    );
+  }
+
+  @override
+  double applyPhysicsToUserOffset(ScrollMetrics position, double offset) {
+    if (isRTL && isMobile && position.axis == Axis.horizontal) {
+      return super.applyPhysicsToUserOffset(position, -offset);
+    }
+    return super.applyPhysicsToUserOffset(position, offset);
+  }
+
+  @override
+  Simulation? createBallisticSimulation(
+    ScrollMetrics position,
+    double velocity,
+  ) {
+    if (isRTL && isMobile && position.axis == Axis.horizontal) {
+      return super.createBallisticSimulation(position, -velocity);
+    }
+    return super.createBallisticSimulation(position, velocity);
+  }
 }
