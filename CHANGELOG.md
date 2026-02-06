@@ -5,3 +5,6 @@
 
 ## 1.1.0
 - Enhanced RTL support.
+
+## 1.2.0
+ - Synced with code_forge 8.2.0
