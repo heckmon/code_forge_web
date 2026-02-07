@@ -4299,7 +4299,61 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   void _onControllerChange() {
     if (controller.lspFoldRanges != _lastLspFoldRanges) {
       _lastLspFoldRanges = controller.lspFoldRanges;
-      _foldRangesNeedsClear = true;
+
+      if (controller.lspFoldRanges != null) {
+        final newLspRanges = controller.lspFoldRanges!;
+        final preservedFoldRanges = <int, FoldRange>{};
+
+        for (final entry in newLspRanges.entries) {
+          final lineIndex = entry.key;
+          final newFold = entry.value;
+
+          FoldRange? existingFold = _foldRanges[lineIndex];
+
+          if (existingFold != null) {
+            newFold.isFolded = existingFold.isFolded;
+            newFold.originallyFoldedChildren =
+                existingFold.originallyFoldedChildren;
+          } else {
+            for (
+              int offset = 1;
+              offset <= 3 && existingFold == null;
+              offset++
+            ) {
+              existingFold =
+                  _foldRanges[lineIndex - offset] ??
+                  _foldRanges[lineIndex + offset];
+              if (existingFold != null) {
+                final oldRange =
+                    existingFold.endIndex - existingFold.startIndex;
+                final newRange = newFold.endIndex - newFold.startIndex;
+                final diff = (oldRange - newRange).abs();
+                if (diff <= (oldRange * 0.2)) {
+                  newFold.isFolded = existingFold.isFolded;
+                  newFold.originallyFoldedChildren =
+                      existingFold.originallyFoldedChildren;
+                } else {
+                  existingFold = null;
+                }
+              }
+            }
+          }
+
+          preservedFoldRanges[lineIndex] = newFold;
+        }
+
+        _foldRanges.clear();
+        _foldRanges.addAll(preservedFoldRanges);
+
+        controller.foldings = {
+          for (var f in _foldRanges.values.where(
+            (f) => f != null && f.isFolded,
+          ))
+            f!.startIndex: f,
+        };
+      } else if (!controller.lspFoldRangesWereAdjusted) {
+        _foldRangesNeedsClear = true;
+      }
     }
 
     if (controller.searchHighlightsChanged) {
@@ -4473,6 +4527,17 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
             adjustedFoldRanges[oldStartIndex] = fold;
             if (fold.isFolded) {
               adjustedControllerFoldings[oldStartIndex] = fold;
+            }
+          } else if (fold.startIndex <= editLine && fold.endIndex >= editLine) {
+            final newEndIndex = fold.endIndex + lineDelta;
+            if (newEndIndex >= oldStartIndex) {
+              final newFold = FoldRange(oldStartIndex, newEndIndex);
+              newFold.isFolded = fold.isFolded;
+              newFold.originallyFoldedChildren = fold.originallyFoldedChildren;
+              adjustedFoldRanges[oldStartIndex] = newFold;
+              if (newFold.isFolded) {
+                adjustedControllerFoldings[oldStartIndex] = newFold;
+              }
             }
           } else if (fold.startIndex > editLine) {
             final newStartIndex = fold.startIndex + lineDelta;
@@ -7205,7 +7270,9 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       ..color = highlightColor
       ..style = PaintingStyle.fill;
 
-    for (final foldRange in _foldRanges.values.where((f) => f != null)) {
+    for (final foldRange in controller.foldings.values.where(
+      (f) => f != null,
+    )) {
       if (!foldRange!.isFolded) continue;
 
       final foldStartLine = foldRange.startIndex;
