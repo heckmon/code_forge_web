@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:re_highlight/re_highlight.dart';
 
 /// This class provides styling options for code selection in the code editor.
 class CodeSelectionStyle {
@@ -753,5 +756,665 @@ class DocumentHighlight {
       endLine: end['line'] as int,
       endColumn: end['character'] as int,
     );
+  }
+}
+
+class CustomTheme {
+  ///Create a custom theme for code_forge instead of using prebuilt ones from the re_highlight package.
+  static Map<String, TextStyle> create({
+    required Color color,
+    required Color backgroundColor,
+    TextStyle? keyword,
+    TextStyle? operator,
+    TextStyle? function,
+    TextStyle? funtionParams,
+    TextStyle? funtionParamsTyping,
+    TextStyle? comment,
+    TextStyle? quote,
+    TextStyle? constructorString,
+    TextStyle? doctag,
+    TextStyle? formula,
+    TextStyle? section,
+    TextStyle? name,
+    TextStyle? selectorTag,
+    TextStyle? deletion,
+    TextStyle? literal,
+    TextStyle? string,
+    TextStyle? regexp,
+    TextStyle? attribute,
+    TextStyle? addition,
+    TextStyle? metaString,
+    TextStyle? builtIn,
+    TextStyle? variable,
+    TextStyle? patternMatch,
+    TextStyle? patternMatchConstructor,
+    TextStyle? moduleAccessModule,
+    TextStyle? subst,
+    TextStyle? titleClass,
+    TextStyle? classTitle,
+    TextStyle? attr,
+    TextStyle? templateVariable,
+    TextStyle? type,
+    TextStyle? selectorClass,
+    TextStyle? selectorAttr,
+    TextStyle? selectorPseudo,
+    TextStyle? number,
+    TextStyle? symbol,
+    TextStyle? bullet,
+    TextStyle? link,
+    TextStyle? meta,
+    TextStyle? selectorId,
+    TextStyle? title,
+  }) {
+    return {
+      'root': TextStyle(color: color, backgroundColor: backgroundColor),
+      'keyword': keyword ?? TextStyle(color: keyword?.color),
+      'operator': operator ?? TextStyle(color: operator?.color),
+      'pattern-match': patternMatch ?? TextStyle(color: patternMatch?.color),
+      'pattern-match-constructor':
+          patternMatchConstructor ??
+          TextStyle(color: patternMatchConstructor?.color),
+      'function': function ?? TextStyle(color: function?.color),
+      'function-params':
+          funtionParams ?? TextStyle(color: funtionParams?.color),
+      'function-params-typing':
+          funtionParamsTyping ?? TextStyle(color: funtionParamsTyping?.color),
+      'module-access-module':
+          moduleAccessModule ?? TextStyle(color: moduleAccessModule?.color),
+      'constructor-string':
+          constructorString ?? TextStyle(color: constructorString?.color),
+      'comment':
+          comment ??
+          TextStyle(color: comment?.color, fontStyle: FontStyle.italic),
+      'quote':
+          quote ?? TextStyle(color: quote?.color, fontStyle: FontStyle.italic),
+      'doctag': doctag ?? TextStyle(color: doctag?.color),
+      'formula': formula ?? TextStyle(color: formula?.color),
+      'section': section ?? TextStyle(color: section?.color),
+      'name': name ?? TextStyle(color: name?.color),
+      'selector-tag': selectorTag ?? TextStyle(color: selectorTag?.color),
+      'deletion': deletion ?? TextStyle(color: deletion?.color),
+      'subst': subst ?? TextStyle(color: subst?.color),
+      'literal': literal ?? TextStyle(color: literal?.color),
+      'string': string ?? TextStyle(color: string?.color),
+      'regexp': regexp ?? TextStyle(color: regexp?.color),
+      'addition': addition ?? TextStyle(color: addition?.color),
+      'attribute': attribute ?? TextStyle(color: attribute?.color),
+      'meta-string': metaString ?? TextStyle(color: metaString?.color),
+      'built_in': builtIn ?? TextStyle(color: builtIn?.color),
+      'title.class_': titleClass ?? TextStyle(color: titleClass?.color),
+      'class-title': classTitle ?? TextStyle(color: classTitle?.color),
+      'attr': attr ?? TextStyle(color: attr?.color),
+      'variable': variable ?? TextStyle(color: variable?.color),
+      'template-variable':
+          templateVariable ?? TextStyle(color: templateVariable?.color),
+      'type': type ?? TextStyle(color: type?.color),
+      'selector-class': selectorClass ?? TextStyle(color: selectorClass?.color),
+      'selector-attr': selectorAttr ?? TextStyle(color: selectorAttr?.color),
+      'selector-pseudo':
+          selectorPseudo ?? TextStyle(color: selectorPseudo?.color),
+      'number': number ?? TextStyle(color: number?.color),
+      'symbol': symbol ?? TextStyle(color: symbol?.color),
+      'bullet': bullet ?? TextStyle(color: bullet?.color),
+      'link': link ?? TextStyle(color: link?.color),
+      'meta': meta ?? TextStyle(color: meta?.color),
+      'selector-id': selectorId ?? TextStyle(color: selectorId?.color),
+      'title': title ?? TextStyle(color: title?.color),
+      'emphasis': TextStyle(fontStyle: FontStyle.italic),
+      'strong': TextStyle(fontWeight: FontWeight.bold),
+    };
+  }
+}
+
+class CustomLanguageGrammer {
+  /// Converts a TextMate grammar JSON string into a re_highlight [Mode].
+  ///
+  /// TextMate grammars use scope names (e.g. `keyword.control.dart`,
+  /// `string.quoted.double`) which must be mapped to highlight.js class names
+  /// (`keyword`, `string`, `comment`, `number`, etc.) that re_highlight themes
+  /// understand.
+  static Mode fromJson(String json) {
+    final decoded = jsonDecode(json) as Map<String, dynamic>;
+
+    final repository = <String, dynamic>{};
+    if (decoded.containsKey('repository')) {
+      final repo = decoded['repository'] as Map<String, dynamic>;
+      repo.forEach((key, value) {
+        repository[key] = value;
+      });
+    }
+
+    final keywordSets = <String, Set<String>>{};
+    _collectKeywords(repository, keywordSets);
+
+    final root = Mode(
+      name: decoded['name'] as String?,
+      aliases: decoded.containsKey('aliases')
+          ? (decoded['aliases'] as List).cast<String>()
+          : null,
+    );
+
+    if (keywordSets.isNotEmpty) {
+      final keywordsMap = <String, dynamic>{};
+      keywordsMap['\$pattern'] = r'[A-Za-z_]\w*|__\w+__';
+      keywordSets.forEach((category, words) {
+        keywordsMap[category] = words.toList();
+      });
+      root.keywords = keywordsMap;
+    }
+
+    final contains = <Mode>[];
+    _buildStandardContains(repository, contains);
+    root.contains = contains.isNotEmpty ? contains : null;
+
+    return root;
+  }
+
+  static void _buildStandardContains(
+    Map<String, dynamic> repository,
+    List<Mode> contains,
+  ) {
+    final hasHashComments =
+        repository.containsKey('comments') ||
+        repository.containsKey('comments-base') ||
+        repository.containsKey('comment');
+    final hasSlashComments = _repoContainsBegin(repository, '//');
+    final hasBlockComments = _repoContainsBegin(repository, r'/\*');
+
+    if (hasHashComments) {
+      contains.add(Mode(scope: 'comment', begin: '#', end: r'$'));
+    }
+    if (hasSlashComments) {
+      contains.add(Mode(scope: 'comment', begin: '//', end: r'$'));
+    }
+    if (hasBlockComments) {
+      contains.add(Mode(scope: 'comment', begin: r'/\*', end: r'\*/'));
+    }
+
+    final hasTripleQuote =
+        _repoContainsScope(repository, 'string.quoted.multi') ||
+        _repoContainsScope(repository, 'string.quoted.docstring.multi') ||
+        repository.containsKey('docstring');
+    final hasSingleQuote =
+        _repoContainsScope(repository, 'string.quoted.single') ||
+        _repoContainsScope(repository, 'string.quoted') ||
+        repository.containsKey('string-quoted-single-line');
+    final hasDoubleQuote =
+        _repoContainsScope(repository, 'string.quoted') ||
+        repository.containsKey('string-quoted-single-line');
+
+    if (hasTripleQuote) {
+      contains.add(
+        Mode(scope: 'string', begin: "'''", end: "'''", relevance: 10),
+      );
+      contains.add(
+        Mode(scope: 'string', begin: '"""', end: '"""', relevance: 10),
+      );
+    }
+
+    if (hasSingleQuote || hasDoubleQuote) {
+      contains.add(
+        Mode(
+          scope: 'string',
+          begin: "'",
+          end: "'",
+          contains: [Mode(match: r"\\.")],
+        ),
+      );
+      contains.add(
+        Mode(
+          scope: 'string',
+          begin: '"',
+          end: '"',
+          contains: [Mode(match: r"\\.")],
+        ),
+      );
+    }
+
+    final hasNumbers =
+        repository.containsKey('number-float') ||
+        repository.containsKey('number-dec') ||
+        repository.containsKey('number') ||
+        _repoContainsScope(repository, 'constant.numeric');
+    if (hasNumbers) {
+      contains.add(
+        Mode(scope: 'number', match: r'(?<![.\w])0[Xx][\da-fA-F_]+\b'),
+      );
+      contains.add(Mode(scope: 'number', match: r'(?<![.\w])0[Oo][0-7_]+\b'));
+      contains.add(Mode(scope: 'number', match: r'(?<![.\w])0[Bb][01_]+\b'));
+      contains.add(
+        Mode(
+          scope: 'number',
+          match: r'(?<!\w)(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?[jJ]?\b',
+        ),
+      );
+    }
+
+    if (repository.containsKey('function-declaration') ||
+        repository.containsKey('function-definition') ||
+        _repoContainsScope(repository, 'entity.name.function')) {
+      contains.add(
+        Mode(
+          match: [r'\b(def|func|function|fn)', r'\s+', r'(\w+)'],
+          scope: <int, String>{1: 'keyword', 3: 'title.function'},
+        ),
+      );
+    }
+
+    if (repository.containsKey('class-declaration') ||
+        repository.containsKey('class-definition') ||
+        _repoContainsScope(repository, 'entity.name.class') ||
+        _repoContainsScope(repository, 'entity.name.type.class')) {
+      contains.add(
+        Mode(
+          match: [r'\b(class)', r'\s+', r'(\w+)'],
+          scope: <int, String>{1: 'keyword', 3: 'title.class'},
+        ),
+      );
+    }
+
+    if (repository.containsKey('decorator')) {
+      contains.add(Mode(scope: 'meta', match: r'@\w+'));
+    }
+
+    if (repository.containsKey('ellipsis')) {
+      contains.add(Mode(scope: 'literal', match: r'\.\.\.'));
+    }
+
+    _addSafePatterns(repository, contains);
+  }
+
+  static void _addSafePatterns(
+    Map<String, dynamic> repository,
+    List<Mode> contains,
+  ) {
+    final added = <String>{};
+
+    repository.forEach((key, entry) {
+      if (entry is! Map<String, dynamic>) return;
+
+      final items = <Map<String, dynamic>>[
+        entry,
+        if (entry.containsKey('patterns'))
+          ...(entry['patterns'] as List).whereType<Map<String, dynamic>>(),
+      ];
+
+      for (final p in items) {
+        final name = p['name'] as String? ?? p['contentName'] as String? ?? '';
+        if (name.isEmpty) continue;
+
+        final className = _mapScopeToClassName(name);
+        if (className == null) continue;
+
+        if (className != 'number') continue;
+
+        if (p.containsKey('match')) {
+          final regex = _sanitizeRegex(p['match'] as String);
+          if (_isValidRegex(regex) &&
+              !_isOverlyBroad(regex) &&
+              !_hasPosixClass(regex) &&
+              !added.contains(regex)) {
+            added.add(regex);
+            contains.add(Mode(match: regex, scope: className));
+          }
+        }
+      }
+    });
+  }
+
+  static bool _repoContainsBegin(
+    Map<String, dynamic> repository,
+    String begin,
+  ) {
+    for (final entry in repository.values) {
+      if (entry is! Map<String, dynamic>) continue;
+      if ((entry['begin'] as String? ?? '').contains(begin)) return true;
+      if (entry.containsKey('patterns')) {
+        for (final p in entry['patterns'] as List) {
+          if (p is Map<String, dynamic> &&
+              (p['begin'] as String? ?? '').contains(begin)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  static bool _repoContainsScope(
+    Map<String, dynamic> repository,
+    String scopePrefix,
+  ) {
+    for (final entry in repository.values) {
+      if (entry is! Map<String, dynamic>) continue;
+      final name = entry['name'] as String? ?? '';
+      if (name.startsWith(scopePrefix)) return true;
+      if (entry.containsKey('patterns')) {
+        for (final p in entry['patterns'] as List) {
+          if (p is Map<String, dynamic>) {
+            final pName = p['name'] as String? ?? '';
+            if (pName.startsWith(scopePrefix)) return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  static bool _isOverlyBroad(String regex) {
+    if (RegExp(r'^\(?\.[\+\*]').hasMatch(regex)) return true;
+    if (regex.startsWith('(.+?)')) return true;
+    return false;
+  }
+
+  static bool _hasPosixClass(String regex) {
+    return regex.contains('[:alpha:]') ||
+        regex.contains('[:upper:]') ||
+        regex.contains('[:lower:]') ||
+        regex.contains('[:digit:]') ||
+        regex.contains('[:alnum:]') ||
+        regex.contains(r'\p{') ||
+        regex.contains(r'\P{');
+  }
+
+  static String? _mapScopeToClassName(String tmScope) {
+    final parts = tmScope.split('.');
+    if (parts.isEmpty) return null;
+
+    final base = parts[0];
+    switch (base) {
+      case 'keyword':
+        return 'keyword';
+      case 'comment':
+        return 'comment';
+      case 'string':
+        return 'string';
+      case 'constant':
+        if (parts.length > 1) {
+          switch (parts[1]) {
+            case 'numeric':
+              return 'number';
+            case 'language':
+              return 'literal';
+            case 'character':
+              return 'string';
+            default:
+              return 'literal';
+          }
+        }
+        return 'literal';
+      case 'variable':
+        if (parts.length > 1 && parts[1] == 'language') {
+          return 'variable.language';
+        }
+        return 'variable';
+      case 'entity':
+        if (parts.length > 1) {
+          switch (parts[1]) {
+            case 'name':
+              if (parts.length > 2) {
+                switch (parts[2]) {
+                  case 'function':
+                    return 'title.function';
+                  case 'type':
+                  case 'class':
+                    return 'title.class';
+                  case 'tag':
+                    return 'selector-tag';
+                  case 'section':
+                    return 'section';
+                  default:
+                    return 'title';
+                }
+              }
+              return 'title';
+            case 'other':
+              return 'attr';
+            default:
+              return 'title';
+          }
+        }
+        return 'title';
+      case 'support':
+        if (parts.length > 1) {
+          switch (parts[1]) {
+            case 'function':
+              return 'built_in';
+            case 'class':
+            case 'type':
+              return 'built_in';
+            case 'constant':
+              return 'literal';
+            case 'variable':
+              return 'variable';
+            default:
+              return 'built_in';
+          }
+        }
+        return 'built_in';
+      case 'storage':
+        if (parts.length > 1 && parts[1] == 'type') {
+          return 'type';
+        }
+        return 'keyword';
+      case 'meta':
+        if (parts.length > 1 && parts[1] == 'embedded') {
+          return 'subst';
+        }
+        return 'meta';
+      case 'punctuation':
+        return 'punctuation';
+      case 'invalid':
+        return 'comment';
+      case 'markup':
+        if (parts.length > 1) {
+          switch (parts[1]) {
+            case 'bold':
+              return 'strong';
+            case 'italic':
+              return 'emphasis';
+            case 'underline':
+              return 'link';
+            default:
+              return null;
+          }
+        }
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  static void _collectKeywords(
+    Map<String, dynamic> repository,
+    Map<String, Set<String>> keywordSets,
+  ) {
+    void visitEntry(dynamic entry, Set<String> visited) {
+      if (entry is! Map<String, dynamic>) return;
+
+      if (entry.containsKey('patterns')) {
+        final patterns = entry['patterns'] as List<dynamic>;
+        for (final p in patterns) {
+          if (p is! Map<String, dynamic>) continue;
+
+          if (p.containsKey('include')) {
+            final include = p['include'] as String;
+            if (include.startsWith('#')) {
+              final ref = include.substring(1);
+              if (!visited.contains(ref) && repository.containsKey(ref)) {
+                final newVisited = Set<String>.from(visited)..add(ref);
+                visitEntry(repository[ref], newVisited);
+              }
+            }
+            continue;
+          }
+
+          if (p.containsKey('match') && p.containsKey('name')) {
+            _tryExtractKeywords(
+              p['match'] as String,
+              p['name'] as String,
+              keywordSets,
+            );
+          }
+
+          if (p.containsKey('begin') && p.containsKey('beginCaptures')) {
+            final beginRegex = p['begin'] as String;
+            final captures = p['beginCaptures'] as Map<String, dynamic>;
+            final groupContents = _extractCaptureGroups(beginRegex);
+            captures.forEach((key, value) {
+              if (value is Map<String, dynamic> && value.containsKey('name')) {
+                final captureIndex = int.tryParse(key);
+
+                if (captureIndex != null &&
+                    captureIndex > 0 &&
+                    captureIndex <= groupContents.length) {
+                  final groupContent = groupContents[captureIndex - 1];
+                  _tryExtractKeywords(
+                    '\\b($groupContent)\\b',
+                    value['name'] as String,
+                    keywordSets,
+                  );
+                } else {
+                  _tryExtractKeywords(
+                    beginRegex,
+                    value['name'] as String,
+                    keywordSets,
+                  );
+                }
+              }
+            });
+          }
+
+          if (p.containsKey('begin') && p.containsKey('name')) {
+            final beginRegex = p['begin'] as String;
+            final groupContents = _extractCaptureGroups(beginRegex);
+            for (final content in groupContents) {
+              _tryExtractKeywords(
+                '\\b($content)\\b',
+                p['name'] as String,
+                keywordSets,
+              );
+            }
+          }
+        }
+      }
+
+      if (entry.containsKey('match') && entry.containsKey('name')) {
+        _tryExtractKeywords(
+          entry['match'] as String,
+          entry['name'] as String,
+          keywordSets,
+        );
+      }
+    }
+
+    repository.forEach((key, value) {
+      visitEntry(value, {key});
+    });
+  }
+
+  static void _tryExtractKeywords(
+    String regex,
+    String scopeName,
+    Map<String, Set<String>> keywordSets,
+  ) {
+    final className = _mapScopeToClassName(scopeName);
+    if (className == null) return;
+
+    const keywordCategories = {
+      'keyword',
+      'literal',
+      'built_in',
+      'type',
+      'variable',
+      'variable.language',
+    };
+    if (!keywordCategories.contains(className)) return;
+
+    final words = _extractKeywordsFromRegex(regex);
+    if (words != null && words.isNotEmpty) {
+      keywordSets.putIfAbsent(className, () => <String>{});
+      keywordSets[className]!.addAll(words);
+    }
+  }
+
+  static List<String>? _extractKeywordsFromRegex(String regex) {
+    final groupMatch = RegExp(
+      r'(?:\\b)?\(?(?:\?[:<>=!][^)]*\))?(?:\\b)?\((?:\?:|\?<[!=][^)]*\))?\s*([^)]+)\)(?:\\b)?',
+    ).firstMatch(regex);
+    if (groupMatch != null) {
+      final group = groupMatch.group(1)!;
+      final parts = group.split('|');
+      final words = <String>[];
+      for (var part in parts) {
+        part = part.trim();
+        part = part.replaceAll(RegExp(r'\\s\+'), ' ');
+        if (RegExp(
+          r'^[a-zA-Z_][a-zA-Z0-9_]*(?:\s+[a-zA-Z_]+)*$',
+        ).hasMatch(part)) {
+          words.add(part);
+        }
+      }
+      if (words.isNotEmpty) return words;
+    }
+
+    final singleMatch = RegExp(r'\\b([a-zA-Z_]\w*)\\b').firstMatch(regex);
+    if (singleMatch != null) {
+      return [singleMatch.group(1)!];
+    }
+
+    return null;
+  }
+
+  static List<String> _extractCaptureGroups(String regex) {
+    final groups = <String>[];
+    var depth = 0;
+    var start = -1;
+    var isNonCapturing = false;
+
+    for (var i = 0; i < regex.length; i++) {
+      if (regex[i] == '\\' && i + 1 < regex.length) {
+        i++;
+        continue;
+      }
+
+      if (regex[i] == '(') {
+        if (depth == 0) {
+          isNonCapturing = false;
+          if (i + 1 < regex.length && regex[i + 1] == '?') {
+            isNonCapturing = true;
+          }
+          start = i + 1;
+        }
+        depth++;
+      } else if (regex[i] == ')') {
+        depth--;
+        if (depth == 0 && start >= 0 && !isNonCapturing) {
+          var content = regex.substring(start, i);
+          groups.add(content);
+        }
+      }
+    }
+    return groups;
+  }
+
+  static String _sanitizeRegex(String regex) {
+    if (regex.isEmpty) return regex;
+    var result = regex;
+    result = result.replaceAllMapped(RegExp(r'([*+?])\+'), (m) => m.group(1)!);
+    result = result.replaceAll('(?>', '(?:');
+    result = result.replaceAllMapped(RegExp(r'\[\]'), (m) => '[\\]');
+    result = result.replaceAll(r'\h', r'[0-9a-fA-F]');
+    result = result.replaceAll(r'\H', r'[^0-9a-fA-F]');
+    return result;
+  }
+
+  static bool _isValidRegex(String regex) {
+    try {
+      RegExp(regex);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 }

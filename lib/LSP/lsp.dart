@@ -1283,6 +1283,21 @@ class LspClientCapabilities {
     this.goToDefinition = true,
     this.rename = true,
   });
+
+  /// Disable all LSP features
+  static const disableAll = LspClientCapabilities(
+    semanticHighlighting: false,
+    codeCompletion: false,
+    hoverInfo: false,
+    codeAction: false,
+    signatureHelp: false,
+    documentColor: false,
+    documentHighlight: false,
+    codeFolding: false,
+    inlayHint: false,
+    goToDefinition: false,
+    rename: false,
+  );
 }
 
 /// Represents a completion item in the LSP (Language Server Protocol).
@@ -1363,7 +1378,7 @@ class LspSignatureHelps {
   final String documentation, label;
   final List<Map<String, dynamic>> parameters;
 
-  LspSignatureHelps({
+  const LspSignatureHelps({
     required this.activeParameter,
     required this.activeSignature,
     required this.documentation,
@@ -1383,7 +1398,7 @@ class LspSemanticToken {
   /// This is populated from the server's semanticTokensProvider.legend.tokenTypes list.
   final String? tokenTypeName;
 
-  LspSemanticToken({
+  const LspSemanticToken({
     required this.line,
     required this.start,
     required this.length,

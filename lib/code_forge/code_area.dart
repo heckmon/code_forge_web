@@ -4737,6 +4737,14 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       }
     }
 
+    final openingTagName = _extractOpeningTagName(line);
+    if (openingTagName != null) {
+      final matchLine = _findMatchingClosingTagLine(openingTagName, lineIndex);
+      if (matchLine != null && matchLine > lineIndex) {
+        return FoldRange(lineIndex, matchLine);
+      }
+    }
+
     return null;
   }
 
@@ -4984,6 +4992,53 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       }
     }
     _bracketCache[pos] = null;
+    return null;
+  }
+
+  String? _extractOpeningTagName(String lineText) {
+    final trimmed = lineText.trimRight();
+    final openTagMatch = RegExp(r'<(\w+)(?:\s[^>]*)?>$').firstMatch(trimmed);
+    if (openTagMatch != null) {
+      final tagName = openTagMatch.group(1);
+      if (!trimmed.endsWith('/>') && !trimmed.endsWith('-->')) {
+        return tagName;
+      }
+    }
+    return null;
+  }
+
+  int? _findMatchingClosingTagLine(String tagName, int startLine) {
+    final closeTagPattern = RegExp(r'</' + RegExp.escape(tagName) + r'\s*>');
+    int depth = 1;
+
+    for (int i = startLine + 1; i < controller.lineCount; i++) {
+      String lineText;
+      if (_lineTextCache.containsKey(i)) {
+        lineText = _lineTextCache[i]!;
+      } else {
+        lineText = controller.getLineText(i);
+        _lineTextCache[i] = lineText;
+      }
+
+      final openMatches = RegExp(
+        r'<' + RegExp.escape(tagName) + r'(?:\s[^>]*)?>',
+      ).allMatches(lineText);
+      for (final match in openMatches) {
+        final fullMatch = match.group(0)!;
+        if (!fullMatch.endsWith('/>')) {
+          depth++;
+        }
+      }
+
+      final closeMatches = closeTagPattern.allMatches(lineText);
+      for (final _ in closeMatches) {
+        depth--;
+        if (depth == 0) {
+          return i;
+        }
+      }
+    }
+
     return null;
   }
 
@@ -6681,7 +6736,19 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
           trimmed.endsWith('(') ||
           trimmed.endsWith('[') ||
           trimmed.endsWith(':');
-      if (!endsWithBracket) return;
+
+      final openingTagName = _extractOpeningTagName(lineText);
+      final isTagBasedLanguage =
+          _language.name == 'html' ||
+          _language.name == 'xml' ||
+          (_language.aliases?.contains('html') ?? false) ||
+          (_language.aliases?.contains('xml') ?? false) ||
+          (languageId?.contains('html') ?? false) ||
+          (languageId?.contains('xml') ?? false);
+
+      if (!endsWithBracket && (!isTagBasedLanguage || openingTagName == null)) {
+        return;
+      }
 
       final leadingSpaces = lineText.length - lineText.trimLeft().length;
       final indentLevel = _lineIndentCache.containsKey(i)
@@ -6700,6 +6767,13 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
 
         if (matchPos != null) {
           endLine = controller.getLineAtOffset(matchPos) + 1;
+        } else {
+          endLine = _findIndentBasedEndLine(i, leadingSpaces, hasActiveFolds);
+        }
+      } else if (openingTagName != null && isTagBasedLanguage) {
+        final matchLine = _findMatchingClosingTagLine(openingTagName, i);
+        if (matchLine != null) {
+          endLine = matchLine + 1;
         } else {
           endLine = _findIndentBasedEndLine(i, leadingSpaces, hasActiveFolds);
         }
