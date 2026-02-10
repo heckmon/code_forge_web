@@ -866,7 +866,7 @@ class CustomTheme {
   }
 }
 
-class CustomLanguageGrammer {
+class CustomLanguageGrammar {
   /// Converts a TextMate grammar JSON string into a re_highlight [Mode].
   ///
   /// TextMate grammars use scope names (e.g. `keyword.control.dart`,

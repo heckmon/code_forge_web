@@ -14,3 +14,6 @@
 
 ## 1.4.0
  - Synced with code_forge 8.4.0
+
+## 1.4.1
+ - Synced with code_forge 8.4.1
