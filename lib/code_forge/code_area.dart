@@ -1521,6 +1521,10 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                                     HardwareKeyboard
                                                         .instance
                                                         .isMetaPressed;
+                                                final isAltPressed =
+                                                    HardwareKeyboard
+                                                        .instance
+                                                        .isAltPressed;
                                                 if (_suggestionNotifier.value !=
                                                         null &&
                                                     _suggestionNotifier
@@ -1883,6 +1887,59 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                                                 isShiftPressed,
                                                           );
                                                       _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    default:
+                                                      break;
+                                                  }
+                                                }
+
+                                                // Alt+Arrow: word-level cursor movement (macOS Option+Arrow)
+                                                if (isAltPressed &&
+                                                    !isCtrlPressed) {
+                                                  switch (event.logicalKey) {
+                                                    case LogicalKeyboardKey
+                                                        .arrowLeft:
+                                                      if (widget
+                                                              .textDirection ==
+                                                          TextDirection.rtl) {
+                                                        _moveWordRight(
+                                                            isShiftPressed);
+                                                      } else {
+                                                        _moveWordLeft(
+                                                            isShiftPressed);
+                                                      }
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .arrowRight:
+                                                      if (widget
+                                                              .textDirection ==
+                                                          TextDirection.rtl) {
+                                                        _moveWordLeft(
+                                                            isShiftPressed);
+                                                      } else {
+                                                        _moveWordRight(
+                                                            isShiftPressed);
+                                                      }
+                                                      _commonKeyFunctions();
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .backspace:
+                                                      if (!_readOnly) {
+                                                        _deleteWordBackward();
+                                                        _commonKeyFunctions();
+                                                      }
+                                                      return KeyEventResult
+                                                          .handled;
+                                                    case LogicalKeyboardKey
+                                                        .delete:
+                                                      if (!_readOnly) {
+                                                        _deleteWordForward();
+                                                        _commonKeyFunctions();
+                                                      }
                                                       return KeyEventResult
                                                           .handled;
                                                     default:
