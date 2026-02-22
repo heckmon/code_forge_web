@@ -298,6 +298,7 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
   final _isMobile =
       defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS;
+  final _isMac = defaultTargetPlatform == TargetPlatform.macOS;
   final _suggScrollController = ScrollController();
   final _actionScrollController = ScrollController();
   final Map<String, String> _suggestionDetailsCache = {};
@@ -1896,7 +1897,8 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
 
                                                 // Alt+Arrow: word-level cursor movement (macOS Option+Arrow)
                                                 if (isAltPressed &&
-                                                    !isCtrlPressed) {
+                                                    !isCtrlPressed &&
+                                                    _isMac) {
                                                   switch (event.logicalKey) {
                                                     case LogicalKeyboardKey
                                                         .arrowLeft:
