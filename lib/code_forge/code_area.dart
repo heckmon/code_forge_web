@@ -1906,10 +1906,12 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                                               .textDirection ==
                                                           TextDirection.rtl) {
                                                         _moveWordRight(
-                                                            isShiftPressed);
+                                                          isShiftPressed,
+                                                        );
                                                       } else {
                                                         _moveWordLeft(
-                                                            isShiftPressed);
+                                                          isShiftPressed,
+                                                        );
                                                       }
                                                       _commonKeyFunctions();
                                                       return KeyEventResult
@@ -1920,10 +1922,12 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                                               .textDirection ==
                                                           TextDirection.rtl) {
                                                         _moveWordLeft(
-                                                            isShiftPressed);
+                                                          isShiftPressed,
+                                                        );
                                                       } else {
                                                         _moveWordRight(
-                                                            isShiftPressed);
+                                                          isShiftPressed,
+                                                        );
                                                       }
                                                       _commonKeyFunctions();
                                                       return KeyEventResult
@@ -3786,6 +3790,14 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     markNeedsPaint();
   }
 
+  void _invalidateFoldRanges([int startLine = 0]) {
+    if (startLine <= 0) {
+      _foldRanges.clear();
+    } else {
+      _foldRanges.removeWhere((key, _) => key >= startLine);
+    }
+  }
+
   void _checkDocumentVersionAndClearCache() {
     final currentDocVersion = _syntaxHighlighter.documentVersion;
     if (currentDocVersion != _lastDocumentVersion) {
@@ -4411,7 +4423,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
             f!.startIndex: f,
         };
       } else if (!controller.lspFoldRangesWereAdjusted) {
-        _foldRangesNeedsClear = true;
+        _invalidateFoldRanges();
       }
     }
 
@@ -4563,6 +4575,8 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
         ),
       );
 
+      _invalidateFoldRanges(startInvalidation);
+
       if (enableGutter && gutterStyle.gutterWidth == null) {
         final fontSize = textStyle?.fontSize ?? 14.0;
         final digits = newLineCount.toString().length;
@@ -4621,6 +4635,10 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
 
       _deferLayout();
     } else if (affectedLine != null) {
+      final startInvalidation = affectedLine > 0 ? affectedLine - 1 : 0;
+
+      _invalidateFoldRanges(startInvalidation);
+
       final newLineWidth = _getLineWidth(affectedLine);
       final currentContentWidth =
           size.width - _gutterWidth - (innerPadding?.horizontal ?? 0);
@@ -4748,34 +4766,49 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
 
     final line = controller.getLineText(lineIndex);
 
-    if (folds.keys.any((k) => line.contains(k))) {
-      final List<String> stack = [];
+    if (!folds.keys.any(line.contains) && !line.trim().endsWith(':')) {
+      return null;
+    }
 
-      final checkLine = controller.getLineText(lineIndex);
+    final List<_BracketEntry> stack = [];
+    for (int i = lineIndex; i < controller.lineCount; i++) {
+      final checkLine = controller.getLineText(i);
       for (int c = 0; c < checkLine.length; c++) {
         final ch = checkLine[c];
         if (folds.containsKey(ch)) {
-          stack.add(ch);
-        } else if (stack.isNotEmpty && ch == folds[stack.last]) {
-          stack.removeLast();
-        }
-      }
-
-      if (stack.isEmpty) return null;
-
-      for (int i = lineIndex + 1; i < controller.lineCount; i++) {
-        final checkLine = controller.getLineText(i);
-        for (int c = 0; c < checkLine.length; c++) {
-          final ch = checkLine[c];
-          if (folds.containsKey(ch)) {
-            stack.add(ch);
-          } else if (stack.isNotEmpty && ch == folds[stack.last]) {
-            stack.removeLast();
-            if (stack.isEmpty) {
-              return FoldRange(lineIndex, i);
-            }
+          stack.add(_BracketEntry(ch, i));
+        } else if (stack.isNotEmpty && ch == folds[stack.last.char]) {
+          final entry = stack.removeLast();
+          final start = entry.line;
+          final end = i;
+          _foldRanges.putIfAbsent(start, () => FoldRange(start, end));
+          if (start == lineIndex && stack.isEmpty) {
+            return _foldRanges[lineIndex];
           }
         }
+      }
+    }
+
+    if (_foldRanges.containsKey(lineIndex)) {
+      return _foldRanges[lineIndex];
+    }
+
+    if (line.trim().endsWith(':')) {
+      final startIndent = line.length - line.trimLeft().length;
+      int endLine = lineIndex;
+
+      for (int j = lineIndex + 1; j < controller.lineCount; j++) {
+        final next = controller.getLineText(j);
+        if (next.trim().isEmpty) continue;
+        final nextIndent = next.length - next.trimLeft().length;
+        if (nextIndent <= startIndent) break;
+        endLine = j;
+      }
+
+      if (endLine > lineIndex) {
+        final fold = FoldRange(lineIndex, endLine);
+        _foldRanges[lineIndex] = fold;
+        return fold;
       }
     }
 
@@ -4809,15 +4842,12 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
 
   FoldRange? _getOrComputeFoldRange(int lineIndex) {
     if (_foldRangesNeedsClear) {
-      _foldRanges.clear();
-      _caretInfoCache.clear();
-      _cachedCaretOffset = -1;
+      _invalidateFoldRanges();
       _foldRangesNeedsClear = false;
     }
 
     if (_foldRanges.containsKey(lineIndex)) {
-      final cached = _foldRanges[lineIndex];
-      return cached;
+      return _foldRanges[lineIndex];
     }
 
     final lspFoldRanges = controller.lspFoldRanges;
@@ -9700,4 +9730,10 @@ class RTLAwareScrollPhysics extends ClampingScrollPhysics {
     }
     return super.createBallisticSimulation(position, velocity);
   }
+}
+
+class _BracketEntry {
+  final String char;
+  final int line;
+  _BracketEntry(this.char, this.line);
 }
