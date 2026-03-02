@@ -1,10 +1,10 @@
 name: code_forge_web
 description: "The web version of the powerful code_forge package"
-version: 1.5.0
+version: 2.0.0
 homepage: https://github.com/heckmon/code_forge_web
 
 environment:
-  sdk: ^3.10.8
+  sdk: ^3.11.0
   flutter: ">=1.17.0"
 
 dependencies:
@@ -48,9 +48,6 @@ flutter:
     - family: Parameter
       fonts:
         - asset: assets/icons/parameter.ttf
-    - family: Snippet
-      fonts:
-        - asset: assets/icons/snippet.ttf
     - family: Interface
       fonts:
         - asset: assets/icons/interface.ttf

@@ -20,3 +20,6 @@
 
 ## 1.5.0
  - Synced with code_forge 8.5.1
+
+## 2.0.0
+ - Synced with code_forge 9.0.0

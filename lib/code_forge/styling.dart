@@ -564,6 +564,53 @@ class GhostText {
   });
 }
 
+/// Represents a block of removed lines to be displayed virtually in the editor.
+///
+/// Virtual removed lines appear between real document lines, showing
+/// content that was deleted (e.g., in a git diff). They are rendered
+/// without line numbers and are read-only, similar to ghost text.
+///
+/// Example:
+/// ```dart
+/// VirtualRemovedBlock(
+///   afterLine: 29,
+///   content: 'final x = 10;\nfinal y = 20;',
+///   backgroundColor: Color(0x30E53935),
+/// )
+/// ```
+class VirtualRemovedBlock {
+  /// The line in the current file after which the removed content appears (0-based).
+  final int afterLine;
+
+  /// The removed text content. Lines are separated by `\n`.
+  final String content;
+
+  /// Background color for the removed lines area.
+  final Color backgroundColor;
+
+  /// Text style for the removed content.
+  final TextStyle? textStyle;
+
+  /// Creates a virtual removed block.
+  ///
+  /// [afterLine] - The 0-based line number after which to display the removed content.
+  /// [content] - The deleted text content (use `\n` for multiple lines).
+  /// [backgroundColor] - Background fill color for the removed area.
+  /// [textStyle] - Optional custom text style for the removed text.
+  const VirtualRemovedBlock({
+    required this.afterLine,
+    required this.content,
+    this.backgroundColor = const Color(0x30E53935),
+    this.textStyle,
+  });
+
+  /// Number of lines in this removed block.
+  int get lineCount => content.split('\n').length;
+
+  /// Individual lines of the removed content.
+  List<String> get lines => content.split('\n');
+}
+
 /// Represents an inlay hint to be displayed inline in the code editor.
 ///
 /// Inlay hints are small pieces of text displayed inline with the code,

@@ -1111,7 +1111,7 @@ Map<CompletionItemType, Icon> completionItemIcons = {
   CompletionItemType.value_: Icon(Icons.numbers, color: Colors.grey),
   CompletionItemType.enum_: Icon(Icons.notes, color: const Color(0xffee9d28)),
   CompletionItemType.keyword: Icon(Icons.wysiwyg_rounded, color: Colors.grey),
-  CompletionItemType.snippet: Icon(CustomIcons.snippet, color: Colors.grey),
+  CompletionItemType.snippet: Icon(Icons.rounded_corner, color: Colors.grey),
   CompletionItemType.color: Icon(Icons.color_lens, color: Colors.grey),
   CompletionItemType.file: Icon(Icons.insert_drive_file, color: Colors.grey),
   CompletionItemType.reference: Icon(CustomIcons.reference, color: Colors.grey),
@@ -1148,7 +1148,6 @@ class CustomIcons {
   static const IconData event = IconData(0x900, fontFamily: 'Event');
   static const IconData operator = IconData(0x900, fontFamily: 'Operator');
   static const IconData parameter = IconData(0x900, fontFamily: 'Parameter');
-  static const IconData snippet = IconData(0x900, fontFamily: 'Snippet');
   static const IconData interface = IconData(0x900, fontFamily: 'Interface');
   static const IconData field = IconData(0x900, fontFamily: 'Field');
 
@@ -1164,7 +1163,6 @@ class CustomIcons {
       'Event': 'assets/icons/event.ttf',
       'Operator': 'assets/icons/operator.ttf',
       'Parameter': 'assets/icons/parameter.ttf',
-      'Snippet': 'assets/icons/snippet.ttf',
       'Interface': 'assets/icons/interface.ttf',
       'Field': 'assets/icons/field.ttf',
     };
@@ -1517,4 +1515,58 @@ Map<String, List<String>> getSemanticMapping(String languageId) {
   }
 
   return baseMap;
+}
+
+/// Represents a custom code snippet configuration for a specific language.
+///
+/// This class encapsulates a collection of code snippets associated with a particular
+/// file extension. It provides a way to define reusable code templates for languages
+/// used in the code editor.
+///
+/// and [snippets] is a map where keys are snippet names and values are the snippet code.
+///
+/// Example usage with [fromJson]:
+/// ```dart
+/// const String jsonString = '''{
+///   "snippets": {
+///     "class": "class MyClass {\\n \\n}",
+///     "function": "void myFunction() {\\n \\n}",
+///     "main": "void main() {\\n  print('Hello, World!');\\n}"
+///   }
+/// }''';
+///
+/// final snippet = CustomCodeSnippets.fromJson(jsonString);
+/// if (snippet != null) {
+///   print(snippet.fileExtension); // Output: .dart
+///   print(snippet.snippets['class']); // Output: class MyClass { ... }
+/// }
+/// ```
+///
+/// Required JSON fields:
+/// - **snippets** (Map&lt;String, String&gt;): A map of snippet names to their code content
+class CustomCodeSnippets {
+  /// A map of snippet names to their code content.
+  ///
+  /// Keys are user-friendly snippet identifiers (e.g., "class", "function"),
+  /// and values are the corresponding code templates with proper formatting.
+  ///
+  /// Example:
+  /// ```dart
+  /// {
+  ///   "class": "class MyClass {\n  \n}",
+  ///   "function": "void myFunction() {\n  \n}",
+  ///   "main": "void main() {\n  print('Hello, World!');\n}"
+  /// }
+  /// ```
+  final Map<String, String> snippets;
+
+  CustomCodeSnippets({required this.snippets});
+
+  static CustomCodeSnippets? fromJson(String json) {
+    final Map<String, Map<String, String>>? decoded = jsonDecode(json);
+    if (decoded == null || decoded.isEmpty) return null;
+    if (!(decoded.containsKey("snippets"))) return null;
+
+    return CustomCodeSnippets(snippets: decoded["snippets"] ?? {});
+  }
 }
