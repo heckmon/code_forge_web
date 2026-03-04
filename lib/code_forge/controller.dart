@@ -497,6 +497,144 @@ class CodeForgeWebController implements DeltaTextInputClient {
     notifyListeners();
   }
 
+  /// Moves every secondary cursor one character to the left.
+  ///
+  /// When [isShiftPressed] is true the secondary cursors are cleared because
+  /// extending a multi-cursor selection is not supported.
+  void moveMultiCursorsLeft({bool isShiftPressed = false}) {
+    if (_multiCursors.isEmpty) return;
+    if (isShiftPressed) {
+      clearMultiCursors();
+      return;
+    }
+    final updated = <({int line, int character})>[];
+    for (final cursor in _multiCursors) {
+      final offset = _multiCursorToOffset(cursor);
+      final newOffset = (offset - 1).clamp(0, _rope.length);
+      final newLine = _rope.getLineAtOffset(newOffset);
+      final newLineStart = _rope.getLineStartOffset(newLine);
+      updated.add((line: newLine, character: newOffset - newLineStart));
+    }
+    _updateMultiCursorsFromList(updated);
+  }
+
+  /// Moves every secondary cursor one character to the right.
+  ///
+  /// When [isShiftPressed] is true the secondary cursors are cleared.
+  void moveMultiCursorsRight({bool isShiftPressed = false}) {
+    if (_multiCursors.isEmpty) return;
+    if (isShiftPressed) {
+      clearMultiCursors();
+      return;
+    }
+    final updated = <({int line, int character})>[];
+    for (final cursor in _multiCursors) {
+      final offset = _multiCursorToOffset(cursor);
+      final newOffset = (offset + 1).clamp(0, _rope.length);
+      final newLine = _rope.getLineAtOffset(newOffset);
+      final newLineStart = _rope.getLineStartOffset(newLine);
+      updated.add((line: newLine, character: newOffset - newLineStart));
+    }
+    _updateMultiCursorsFromList(updated);
+  }
+
+  /// Moves every secondary cursor up one line, maintaining its column.
+  ///
+  /// Folded regions are skipped exactly as they are for the primary cursor.
+  /// When [isShiftPressed] is true the secondary cursors are cleared.
+  void moveMultiCursorsUp({bool isShiftPressed = false}) {
+    if (_multiCursors.isEmpty) return;
+    if (isShiftPressed) {
+      clearMultiCursors();
+      return;
+    }
+    final updated = <({int line, int character})>[];
+    for (final cursor in _multiCursors) {
+      final cursorLine = cursor.line.clamp(0, lineCount - 1);
+      if (cursorLine <= 0) {
+        updated.add((line: 0, character: 0));
+        continue;
+      }
+      int targetLine = cursorLine - 1;
+      while (targetLine > 0 && _isLineInFoldedRegion(targetLine)) {
+        targetLine--;
+      }
+      if (_isLineInFoldedRegion(targetLine)) {
+        targetLine = _getFoldStartForLine(targetLine) ?? 0;
+      }
+      final prevLineText = getLineText(targetLine);
+      final newChar = cursor.character.clamp(0, prevLineText.length);
+      updated.add((line: targetLine, character: newChar));
+    }
+    _updateMultiCursorsFromList(updated);
+  }
+
+  /// Moves every secondary cursor down one line, maintaining its column.
+  ///
+  /// Folded regions are skipped exactly as they are for the primary cursor.
+  /// When [isShiftPressed] is true the secondary cursors are cleared.
+  void moveMultiCursorsDown({bool isShiftPressed = false}) {
+    if (_multiCursors.isEmpty) return;
+    if (isShiftPressed) {
+      clearMultiCursors();
+      return;
+    }
+    final updated = <({int line, int character})>[];
+    for (final cursor in _multiCursors) {
+      final cursorLine = cursor.line.clamp(0, lineCount - 1);
+      if (cursorLine >= lineCount - 1) {
+        final lastLineText = getLineText(lineCount - 1);
+        updated.add((line: lineCount - 1, character: lastLineText.length));
+        continue;
+      }
+      final foldAtCurrent = _getFoldRangeAtCurrentLine(cursorLine);
+      int targetLine;
+      if (foldAtCurrent != null && foldAtCurrent.isFolded) {
+        targetLine = foldAtCurrent.endIndex + 1;
+      } else {
+        targetLine = cursorLine + 1;
+      }
+      while (targetLine < lineCount && _isLineInFoldedRegion(targetLine)) {
+        final foldStart = _getFoldStartForLine(targetLine);
+        if (foldStart != null) {
+          final fold = foldings[foldStart] ?? FoldRange(targetLine, targetLine);
+          targetLine = fold.endIndex + 1;
+        } else {
+          targetLine++;
+        }
+      }
+      if (targetLine >= lineCount) {
+        final lastLineText = getLineText(lineCount - 1);
+        updated.add((line: lineCount - 1, character: lastLineText.length));
+        continue;
+      }
+      final nextLineText = getLineText(targetLine);
+      final newChar = cursor.character.clamp(0, nextLineText.length);
+      updated.add((line: targetLine, character: newChar));
+    }
+    _updateMultiCursorsFromList(updated);
+  }
+
+  /// Replaces the secondary-cursor list with [positions], deduplicating
+  /// against the primary cursor and against duplicate entries.
+  void _updateMultiCursorsFromList(
+    List<({int line, int character})> positions,
+  ) {
+    _multiCursors.clear();
+    final primaryLine = getLineAtOffset(selection.extentOffset);
+    final primaryChar =
+        selection.extentOffset - getLineStartOffset(primaryLine);
+    final seen = <({int line, int character})>{};
+    for (final pos in positions) {
+      if (pos.line == primaryLine && pos.character == primaryChar) continue;
+      if (seen.contains(pos)) continue;
+      seen.add(pos);
+      _multiCursors.add(pos);
+    }
+    multiCursorsChanged = true;
+    notifyListeners();
+  }
+
   /// Performs backspace at all cursor positions (primary + secondary).
   void backspaceAtAllCursors() {
     if (readOnly || _multiCursors.isEmpty) {

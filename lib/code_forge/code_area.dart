@@ -208,14 +208,16 @@ class CodeForgeWeb extends StatefulWidget {
   /// Defaults to [TextDirection.ltr].
   final TextDirection textDirection;
 
-  /// The custom code snippets configuration for the editor.
+  /// A list of custom code snippets that appear in the suggestion popup.
   ///
-  /// Provides a collection of reusable code templates that can be inserted
-  /// into the editor. Each snippet is identified by a name and contains
-  /// the corresponding code template.
+  /// Each [CustomCodeSnippet] defines a label (shown in the popup), the code
+  /// to insert, and optional cursor positions within the inserted code.
+  /// When a snippet with [CustomCodeSnippet.cursorLocations] is accepted the
+  /// primary cursor is placed at the first location and secondary cursors are
+  /// added at the remaining locations.
   ///
-  /// If not provided, no custom snippets are available.
-  final CustomCodeSnippets? customCodeSnippets;
+  /// If `null` or empty, no custom snippets are shown.
+  final List<CustomCodeSnippet>? customCodeSnippets;
 
   /// If set to true, deleting the first line of a folded block will delete the entire folded region,
   /// else only the first line gets deleted and the rest of the block stays safe.
@@ -651,7 +653,7 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
 
     _snippetSuggestionsListener = () {
       if (_isInjectingSnippets) return;
-      final snippets = widget.customCodeSnippets?.snippets;
+      final snippets = widget.customCodeSnippets;
       if (snippets == null || snippets.isEmpty) return;
 
       final currentLength = _controller.text.length;
@@ -670,7 +672,7 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
     _snippetNotifierListener = () {
       if (_isInjectingSnippets) return;
       if (!_snippetsActive) return;
-      final snippets = widget.customCodeSnippets?.snippets;
+      final snippets = widget.customCodeSnippets;
       if (snippets == null || snippets.isEmpty) return;
 
       final current = _suggestionNotifier.value;
@@ -679,13 +681,19 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
 
       final cursor = _controller.selection.extentOffset;
       final prefix = _controller.getCurrentWordPrefix(_controller.text, cursor);
-      final matching = snippets.entries
+      final matching = snippets
           .where(
             (e) =>
                 prefix.isEmpty ||
-                e.key.toLowerCase().startsWith(prefix.toLowerCase()),
+                e.label.toLowerCase().startsWith(prefix.toLowerCase()),
           )
-          .map((e) => _SnippetSuggestion(label: e.key, value: e.value))
+          .map(
+            (e) => _SnippetSuggestion(
+              label: e.label,
+              value: e.value,
+              cursorLocations: e.cursorLocations,
+            ),
+          )
           .toList();
 
       if (matching.isEmpty) return;
@@ -991,6 +999,10 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
     } else {
       _moveSelectionRight(withShift);
     }
+
+    if (_controller.hasMultiCursors) {
+      _controller.moveMultiCursorsRight(isShiftPressed: withShift);
+    }
   }
 
   void _handleArrowLeft(bool withShift) {
@@ -1002,6 +1014,10 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
       _moveSelectionRight(withShift);
     } else {
       _controller.pressLetfArrowKey(isShiftPressed: withShift);
+    }
+
+    if (_controller.hasMultiCursors) {
+      _controller.moveMultiCursorsLeft(isShiftPressed: withShift);
     }
   }
 
@@ -2099,6 +2115,15 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                                           .handled;
                                                     }
                                                     _controller.backspace();
+
+                                                    if (_controller
+                                                        .hasMultiCursors) {
+                                                      _controller
+                                                          .backspaceAtAllCursors();
+                                                    } else {
+                                                      _controller.backspace();
+                                                    }
+
                                                     if (_suggestionNotifier
                                                             .value !=
                                                         null) {
@@ -2135,6 +2160,16 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                                           isShiftPressed:
                                                               isShiftPressed,
                                                         );
+
+                                                    if (_controller
+                                                        .hasMultiCursors) {
+                                                      _controller
+                                                          .moveMultiCursorsDown(
+                                                            isShiftPressed:
+                                                                isShiftPressed,
+                                                          );
+                                                    }
+
                                                     _commonKeyFunctions();
                                                     return KeyEventResult
                                                         .handled;
@@ -2145,6 +2180,16 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                                       isShiftPressed:
                                                           isShiftPressed,
                                                     );
+
+                                                    if (_controller
+                                                        .hasMultiCursors) {
+                                                      _controller
+                                                          .moveMultiCursorsUp(
+                                                            isShiftPressed:
+                                                                isShiftPressed,
+                                                          );
+                                                    }
+
                                                     _commonKeyFunctions();
                                                     return KeyEventResult
                                                         .handled;
@@ -2830,39 +2875,40 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                                         } else {
                                                           _sugSelIndex = indx;
                                                         }
-                                                        final text =
-                                                            item
-                                                                is LspCompletion
-                                                            ? item.label
-                                                            : item
-                                                                  is _SnippetSuggestion
-                                                            ? item.value
-                                                            : item as String;
-                                                        _controller
-                                                            .insertAtCurrentCursor(
-                                                              text,
-                                                              replaceTypedChar:
-                                                                  true,
-                                                            );
-                                                        if (_extraText
-                                                            .isNotEmpty) {
-                                                          _controller
-                                                              .applyWorkspaceEdit(
-                                                                _extraText,
-                                                              );
-                                                        }
                                                         if (item
                                                             is _SnippetSuggestion) {
+                                                          _insertSnippetWithCursors(
+                                                            item,
+                                                          );
                                                           _isInjectingSnippets =
                                                               true;
-                                                        }
-                                                        _suggestionNotifier
-                                                                .value =
-                                                            null;
-                                                        if (item
-                                                            is _SnippetSuggestion) {
+                                                          _suggestionNotifier
+                                                                  .value =
+                                                              null;
                                                           _isInjectingSnippets =
                                                               false;
+                                                        } else {
+                                                          final text =
+                                                              item
+                                                                  is LspCompletion
+                                                              ? item.label
+                                                              : item as String;
+                                                          _controller
+                                                              .insertAtCurrentCursor(
+                                                                text,
+                                                                replaceTypedChar:
+                                                                    true,
+                                                              );
+                                                          if (_extraText
+                                                              .isNotEmpty) {
+                                                            _controller
+                                                                .applyWorkspaceEdit(
+                                                                  _extraText,
+                                                                );
+                                                          }
+                                                          _suggestionNotifier
+                                                                  .value =
+                                                              null;
                                                         }
                                                         _isSignatureInvoked =
                                                             true;
@@ -3624,6 +3670,72 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
     _sugSelIndex = 0;
   }
 
+  void _insertSnippetWithCursors(_SnippetSuggestion snippet) {
+    final cursorBefore = _controller.selection.extentOffset;
+    final safePos = cursorBefore.clamp(0, _controller.length);
+    final prefix = _controller.getCurrentWordPrefix(_controller.text, safePos);
+    final insertStart = (cursorBefore - prefix.length).clamp(
+      0,
+      _controller.length,
+    );
+
+    final currentLine = _controller.getLineAtOffset(safePos);
+    final lineText = _controller.getLineText(currentLine);
+    final indentMatch = RegExp(r'^(\s*)').firstMatch(lineText);
+    final indent = indentMatch?.group(1) ?? '';
+    final String indentedValue;
+    final List<int> adjustedLocations;
+
+    if (indent.isEmpty || !snippet.value.contains('\n')) {
+      indentedValue = snippet.value;
+      adjustedLocations = snippet.cursorLocations.toList();
+    } else {
+      final buffer = StringBuffer();
+      final addedBefore = List<int>.filled(snippet.value.length + 1, 0);
+      int totalAdded = 0;
+
+      for (int i = 0; i < snippet.value.length; i++) {
+        addedBefore[i] = totalAdded;
+        final ch = snippet.value[i];
+        buffer.write(ch);
+        if (ch == '\n') {
+          buffer.write(indent);
+          totalAdded += indent.length;
+        }
+      }
+      addedBefore[snippet.value.length] = totalAdded;
+
+      indentedValue = buffer.toString();
+      adjustedLocations = snippet.cursorLocations.map((loc) {
+        final clampedLoc = loc.clamp(0, snippet.value.length);
+        return clampedLoc + addedBefore[clampedLoc];
+      }).toList();
+    }
+
+    _controller.insertAtCurrentCursor(indentedValue, replaceTypedChar: true);
+
+    if (adjustedLocations.isEmpty) return;
+
+    final primaryOffset = (insertStart + adjustedLocations.first).clamp(
+      0,
+      _controller.length,
+    );
+    _controller.setSelectionSilently(
+      TextSelection.collapsed(offset: primaryOffset),
+    );
+
+    _controller.clearMultiCursors();
+    for (int i = 1; i < adjustedLocations.length; i++) {
+      final offset = (insertStart + adjustedLocations[i]).clamp(
+        0,
+        _controller.length,
+      );
+      final line = _controller.getLineAtOffset(offset);
+      final lineStart = _controller.getLineStartOffset(line);
+      _controller.addMultiCursor(line, offset - lineStart);
+    }
+  }
+
   void _acceptGhostText() {
     final ghostText = _aiNotifier.value;
     if (ghostText == null || ghostText.isEmpty) return;
@@ -3917,6 +4029,20 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       _foldRanges.removeWhere((key, _) => key >= startLine);
     }
     _foldedLineCacheDirty = true;
+  }
+
+  bool _foldRangesStructurallyEqual(Map<int, FoldRange> newRanges) {
+    if (newRanges.length != _foldRanges.length) return false;
+    for (final entry in newRanges.entries) {
+      final existing = _foldRanges[entry.key];
+      if (existing == null) return false;
+      if (existing.startIndex != entry.value.startIndex ||
+          existing.endIndex != entry.value.endIndex ||
+          existing.isFolded != entry.value.isFolded) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void _rebuildFoldedLineCache() {
@@ -4536,67 +4662,72 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
 
       if (controller.lspFoldRanges != null) {
         final newLspRanges = controller.lspFoldRanges!;
-        final preservedFoldRanges = <int, FoldRange>{};
 
-        for (final entry in newLspRanges.entries) {
-          final lineIndex = entry.key;
-          final newFold = entry.value;
+        if (_foldRangesStructurallyEqual(newLspRanges)) {
+          //
+        } else {
+          final preservedFoldRanges = <int, FoldRange>{};
 
-          if (!newFold.isFolded) {
-            FoldRange? existingFold =
-                _foldRanges[lineIndex] ?? controller.foldings[lineIndex];
+          for (final entry in newLspRanges.entries) {
+            final lineIndex = entry.key;
+            final newFold = entry.value;
 
-            if (existingFold != null && existingFold.isFolded) {
-              newFold.isFolded = true;
-              newFold.originallyFoldedChildren =
-                  existingFold.originallyFoldedChildren;
-            } else {
-              for (
-                int offset = 1;
-                offset <= 3 && existingFold == null;
-                offset++
-              ) {
-                existingFold =
-                    _foldRanges[lineIndex - offset] ??
-                    _foldRanges[lineIndex + offset] ??
-                    controller.foldings[lineIndex - offset] ??
-                    controller.foldings[lineIndex + offset];
-                if (existingFold != null && existingFold.isFolded) {
-                  final oldRange =
-                      existingFold.endIndex - existingFold.startIndex;
-                  final newRange = newFold.endIndex - newFold.startIndex;
-                  final diff = (oldRange - newRange).abs();
-                  if (diff <= (oldRange * 0.3)) {
-                    newFold.isFolded = true;
-                    newFold.originallyFoldedChildren =
-                        existingFold.originallyFoldedChildren;
+            if (!newFold.isFolded) {
+              FoldRange? existingFold =
+                  _foldRanges[lineIndex] ?? controller.foldings[lineIndex];
+
+              if (existingFold != null && existingFold.isFolded) {
+                newFold.isFolded = true;
+                newFold.originallyFoldedChildren =
+                    existingFold.originallyFoldedChildren;
+              } else {
+                for (
+                  int offset = 1;
+                  offset <= 3 && existingFold == null;
+                  offset++
+                ) {
+                  existingFold =
+                      _foldRanges[lineIndex - offset] ??
+                      _foldRanges[lineIndex + offset] ??
+                      controller.foldings[lineIndex - offset] ??
+                      controller.foldings[lineIndex + offset];
+                  if (existingFold != null && existingFold.isFolded) {
+                    final oldRange =
+                        existingFold.endIndex - existingFold.startIndex;
+                    final newRange = newFold.endIndex - newFold.startIndex;
+                    final diff = (oldRange - newRange).abs();
+                    if (diff <= (oldRange * 0.3)) {
+                      newFold.isFolded = true;
+                      newFold.originallyFoldedChildren =
+                          existingFold.originallyFoldedChildren;
+                    } else {
+                      existingFold = null;
+                    }
                   } else {
                     existingFold = null;
                   }
-                } else {
-                  existingFold = null;
                 }
               }
             }
+
+            preservedFoldRanges[lineIndex] = newFold;
           }
 
-          preservedFoldRanges[lineIndex] = newFold;
+          _foldRanges.clear();
+          _foldRanges.addAll(preservedFoldRanges);
+
+          controller.foldings = {
+            for (var f in _foldRanges.values.where(
+              (f) => f != null && f.isFolded,
+            ))
+              f!.startIndex: f,
+          };
+          _foldedLineCacheDirty = true;
+          _lineOffsetCache.clear();
+          _hasCachedHeight = false;
+          markNeedsLayout();
+          markNeedsPaint();
         }
-
-        _foldRanges.clear();
-        _foldRanges.addAll(preservedFoldRanges);
-
-        controller.foldings = {
-          for (var f in _foldRanges.values.where(
-            (f) => f != null && f.isFolded,
-          ))
-            f!.startIndex: f,
-        };
-        _foldedLineCacheDirty = true;
-        _lineOffsetCache.clear();
-        _hasCachedHeight = false;
-        markNeedsLayout();
-        markNeedsPaint();
       } else if (!controller.lspFoldRangesWereAdjusted) {
         _invalidateFoldRanges();
       }
@@ -10315,5 +10446,10 @@ class _BracketEntry {
 class _SnippetSuggestion {
   final String label;
   final String value;
-  const _SnippetSuggestion({required this.label, required this.value});
+  final Set<int> cursorLocations;
+  const _SnippetSuggestion({
+    required this.label,
+    required this.value,
+    this.cursorLocations = const {},
+  });
 }

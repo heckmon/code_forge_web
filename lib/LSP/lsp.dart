@@ -1517,56 +1517,50 @@ Map<String, List<String>> getSemanticMapping(String languageId) {
   return baseMap;
 }
 
-/// Represents a custom code snippet configuration for a specific language.
+/// Represents a single custom code snippet that appears in the editor's
+/// suggestion list alongside LSP completions.
 ///
-/// This class encapsulates a collection of code snippets associated with a particular
-/// file extension. It provides a way to define reusable code templates for languages
-/// used in the code editor.
+/// [label] is the text displayed in the suggestion popup (e.g. "if-else").
 ///
-/// and [snippets] is a map where keys are snippet names and values are the snippet code.
+/// [value] is the actual code that gets inserted when the snippet is accepted.
 ///
-/// Example usage with [fromJson]:
+/// [cursorLocations] is an ordered set of **character offsets within [value]**
+/// that determine where cursors are placed after insertion:
+///   - The **first** value becomes the primary cursor position.
+///   - Every subsequent value becomes a secondary (multi) cursor.
+///
+/// Offsets are relative to the start of the inserted [value] text.
+///
+/// Example:
 /// ```dart
-/// const String jsonString = '''{
-///   "snippets": {
-///     "class": "class MyClass {\\n \\n}",
-///     "function": "void myFunction() {\\n \\n}",
-///     "main": "void main() {\\n  print('Hello, World!');\\n}"
-///   }
-/// }''';
-///
-/// final snippet = CustomCodeSnippets.fromJson(jsonString);
-/// if (snippet != null) {
-///   print(snippet.fileExtension); // Output: .dart
-///   print(snippet.snippets['class']); // Output: class MyClass { ... }
-/// }
+/// // Inserts an if-else block and places the primary cursor inside the
+/// // if-branch and a secondary cursor inside the else-branch.
+/// CustomCodeSnippet(
+///   label: 'if-else',
+///   value: 'if (condition) {\n  \n} else {\n  \n}',
+///   cursorLocations: {18, 32},
+/// )
 /// ```
-///
-/// Required JSON fields:
-/// - **snippets** (Map&lt;String, String&gt;): A map of snippet names to their code content
-class CustomCodeSnippets {
-  /// A map of snippet names to their code content.
+class CustomCodeSnippet {
+  /// The label shown in the suggestion popup.
+  final String label;
+
+  /// The code template inserted into the editor when the snippet is accepted.
+  final String value;
+
+  /// Cursor positions (offsets within [value]) after insertion.
   ///
-  /// Keys are user-friendly snippet identifiers (e.g., "class", "function"),
-  /// and values are the corresponding code templates with proper formatting.
+  /// The first element sets the primary cursor; additional elements
+  /// create secondary (multi) cursors via [CodeForgeController.addMultiCursor].
+  final Set<int> cursorLocations;
+
+  /// Creates a custom code snippet.
   ///
-  /// Example:
-  /// ```dart
-  /// {
-  ///   "class": "class MyClass {\n  \n}",
-  ///   "function": "void myFunction() {\n  \n}",
-  ///   "main": "void main() {\n  print('Hello, World!');\n}"
-  /// }
-  /// ```
-  final Map<String, String> snippets;
-
-  CustomCodeSnippets({required this.snippets});
-
-  static CustomCodeSnippets? fromJson(String json) {
-    final Map<String, Map<String, String>>? decoded = jsonDecode(json);
-    if (decoded == null || decoded.isEmpty) return null;
-    if (!(decoded.containsKey("snippets"))) return null;
-
-    return CustomCodeSnippets(snippets: decoded["snippets"] ?? {});
-  }
+  /// All parameters are required. [cursorLocations] may be empty, in which
+  /// case the cursor is placed at the end of the inserted text.
+  CustomCodeSnippet({
+    required this.label,
+    required this.value,
+    required this.cursorLocations,
+  });
 }
