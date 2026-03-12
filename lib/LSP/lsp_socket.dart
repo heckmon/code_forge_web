@@ -33,6 +33,8 @@ class LspSocketConfig extends LspConfig {
     required super.languageId,
     required this.serverUrl,
     super.capabilities,
+    super.initializationOptions,
+    super.workspaceConfiguration,
     super.disableWarning,
     super.disableError,
   }) : _channel = WebSocketChannel.connect(Uri.parse(serverUrl));
@@ -55,7 +57,7 @@ class LspSocketConfig extends LspConfig {
   }
 
   @override
-  Future<Map<String, dynamic>> _sendRequest({
+  Future<Map<String, dynamic>> sendRequest({
     required String method,
     required Map<String, dynamic> params,
   }) async {
@@ -78,12 +80,27 @@ class LspSocketConfig extends LspConfig {
   }
 
   @override
-  Future<void> _sendNotification({
+  Future<void> sendNotification({
     required String method,
     required Map<String, dynamic> params,
   }) async {
     _channel.sink.add(
       jsonEncode({'jsonrpc': '2.0', 'method': method, 'params': params}),
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> sendResponse(
+    int id,
+    List<dynamic> result,
+  ) async {
+    final request = {'jsonrpc': '2.0', 'id': id, "result": result};
+
+    _channel.sink.add(jsonEncode(request));
+
+    return await _responseController.stream.firstWhere(
+      (response) => response['id'] == id,
+      orElse: () => throw TimeoutException('No response for request $id'),
     );
   }
 

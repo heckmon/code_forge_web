@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui' as ui;
 
-import 'package:vector_math/vector_math_64.dart' show Vector3;
-
 import '../LSP/lsp.dart';
 import 'controller.dart';
 import 'find_controller.dart';
@@ -22,6 +20,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:vector_math/vector_math_64.dart' show Vector3;
 import 'package:http/http.dart' as http;
 
 const String _wordCharPattern = r'[\w\u0600-\u06FF\u08A0-\u08FF\u0590-\u05FF]';
@@ -3974,11 +3973,12 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   List<LspErrors> _diagnostics;
   int _cachedCaretOffset = -1, _cachedCaretLine = 0, _cachedCaretLineStart = 0;
   int? _dragStartOffset;
-  Timer? _selectionTimer, _hoverTimer;
+  Timer? _selectionTimer, _hoverTimer, _foldComputeTimer;
   Offset? _pointerDownPosition;
   Offset _currentPosition = Offset.zero;
   Set<int> _foldedLineIndices = {};
   List<int> _sortedFoldedLines = [];
+  bool _asyncFoldComputationPending = false;
   bool _hasActiveFoldsCache = false, _foldedLineCacheDirty = true;
   bool _enableFolding, _enableGuideLines, _enableGutter, _enableGutterDivider;
   bool _isFoldToggleInProgress = false, _lineWrap;
@@ -4029,6 +4029,9 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       _foldRanges.removeWhere((key, _) => key >= startLine);
     }
     _foldedLineCacheDirty = true;
+    if (enableFolding && controller.lineCount > 10000) {
+      _scheduleAsyncFoldComputation();
+    }
   }
 
   bool _foldRangesStructurallyEqual(Map<int, FoldRange> newRanges) {
@@ -4050,17 +4053,21 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     _hasActiveFoldsCache = false;
 
     final lineCount = controller.lineCount;
+    final sortedLines = <int>[];
+
     for (final fold in _foldRanges.values) {
       if (fold != null && fold.isFolded) {
         _hasActiveFoldsCache = true;
         final end = fold.endIndex < lineCount ? fold.endIndex : lineCount - 1;
         for (int i = fold.startIndex + 1; i <= end; i++) {
-          _foldedLineIndices.add(i);
+          sortedLines.add(i);
         }
       }
     }
 
-    _sortedFoldedLines = _foldedLineIndices.toList()..sort();
+    sortedLines.sort();
+    _sortedFoldedLines = sortedLines;
+    _foldedLineIndices = sortedLines.toSet();
     _foldedLineCacheDirty = false;
   }
 
@@ -4087,6 +4094,106 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       }
     }
     return lo;
+  }
+
+  static Map<int, List<int>> _computeAllFoldsInBackground(
+    Map<String, dynamic> params,
+  ) {
+    final lines = params['lines'] as List<String>;
+    final result = <int, List<int>>{};
+
+    const openers = {'{', '[', '('};
+    const closerToOpener = {'}': '{', ']': '[', ')': '('};
+
+    final Map<String, List<int>> stacks = {'{': [], '[': [], '(': []};
+
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      for (int c = 0; c < line.length; c++) {
+        final ch = line[c];
+        if (openers.contains(ch)) {
+          stacks[ch]!.add(i);
+        } else if (closerToOpener.containsKey(ch)) {
+          final opener = closerToOpener[ch]!;
+          final stack = stacks[opener]!;
+          if (stack.isNotEmpty) {
+            final startLine = stack.removeLast();
+            if (i > startLine) {
+              result.putIfAbsent(startLine, () => [startLine, i]);
+            }
+          }
+        }
+      }
+    }
+
+    for (int i = 0; i < lines.length; i++) {
+      if (result.containsKey(i)) continue;
+      final line = lines[i];
+      if (line.trim().endsWith(':')) {
+        final startIndent = line.length - line.trimLeft().length;
+        int endLine = i;
+        for (int j = i + 1; j < lines.length; j++) {
+          final next = lines[j];
+          if (next.trim().isEmpty) continue;
+          final nextIndent = next.length - next.trimLeft().length;
+          if (nextIndent <= startIndent) break;
+          endLine = j;
+        }
+        if (endLine > i) {
+          result[i] = [i, endLine];
+        }
+      }
+    }
+
+    return result;
+  }
+
+  void _scheduleAsyncFoldComputation() {
+    if (!enableFolding) return;
+    if (controller.lspFoldRanges != null) return;
+
+    _foldComputeTimer?.cancel();
+    _foldComputeTimer = Timer(const Duration(milliseconds: 300), () {
+      _runAsyncFoldComputation();
+    });
+  }
+
+  Future<void> _runAsyncFoldComputation() async {
+    if (!enableFolding) return;
+    if (controller.lspFoldRanges != null) return;
+
+    _asyncFoldComputationPending = true;
+
+    final lineCount = controller.lineCount;
+    final lines = List<String>.generate(
+      lineCount,
+      (i) => controller.getLineText(i),
+    );
+
+    try {
+      final computed = await compute(_computeAllFoldsInBackground, {
+        'lines': lines,
+      });
+
+      for (final entry in computed.entries) {
+        final startLine = entry.value[0];
+        final endLine = entry.value[1];
+        if (_foldRanges[startLine] == null) {
+          final existing = controller.foldings[startLine];
+          final fold = FoldRange(startLine, endLine);
+          if (existing != null && existing.isFolded) {
+            fold.isFolded = true;
+            fold.originallyFoldedChildren = existing.originallyFoldedChildren;
+          }
+          _foldRanges[startLine] = fold;
+        }
+      }
+      _asyncFoldComputationPending = false;
+      markNeedsPaint();
+    } catch (e) {
+      _asyncFoldComputationPending = false;
+      debugPrint('Error computing folds in isolate: $e');
+    }
   }
 
   void _checkDocumentVersionAndClearCache() {
@@ -4349,6 +4456,9 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
         foldAll: _foldAllRanges,
         unfoldAll: _unfoldAllRanges,
       );
+      if (controller.lineCount > 10000 && controller.lspFoldRanges == null) {
+        _scheduleAsyncFoldComputation();
+      }
     }
 
     controller.setScrollCallback(_scrollToLine);
@@ -5095,7 +5205,10 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     final Map<String, List<_BracketEntry>> stacks = {'{': [], '[': [], '(': []};
     bool foundForLineIndex = false;
 
-    for (int i = lineIndex; i < controller.lineCount; i++) {
+    final maxScan = controller.lineCount <= 10000
+        ? controller.lineCount
+        : min(lineIndex + 10000, controller.lineCount);
+    for (int i = lineIndex; i < maxScan; i++) {
       final checkLine = controller.getLineText(i);
       for (int c = 0; c < checkLine.length; c++) {
         final ch = checkLine[c];
@@ -5131,8 +5244,9 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     if (line.trim().endsWith(':')) {
       final startIndent = line.length - line.trimLeft().length;
       int endLine = lineIndex;
+      final maxIndentScan = min(lineIndex + 5000, controller.lineCount);
 
-      for (int j = lineIndex + 1; j < controller.lineCount; j++) {
+      for (int j = lineIndex + 1; j < maxIndentScan; j++) {
         final next = controller.getLineText(j);
         if (next.trim().isEmpty) continue;
         final nextIndent = next.length - next.trimLeft().length;
@@ -5169,12 +5283,23 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     }
 
     final lspFoldRanges = controller.lspFoldRanges;
-    final fold = (lspFoldRanges != null && lspFoldRanges.containsKey(lineIndex))
-        ? lspFoldRanges[lineIndex]
-        : _computeFoldRangeForLine(lineIndex);
+    if (lspFoldRanges != null && lspFoldRanges.containsKey(lineIndex)) {
+      final fold = lspFoldRanges[lineIndex];
+      _foldRanges[lineIndex] = fold;
+      return fold;
+    }
 
-    _foldRanges[lineIndex] = fold;
-    return fold;
+    if (controller.lineCount <= 10000) {
+      final fold = _computeFoldRangeForLine(lineIndex);
+      _foldRanges[lineIndex] = fold;
+      return fold;
+    }
+
+    if (!_asyncFoldComputationPending) {
+      _scheduleAsyncFoldComputation();
+    }
+
+    return null;
   }
 
   void _toggleFold(FoldRange fold) {
@@ -5224,10 +5349,24 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     if (!enableFolding) return;
     _isFoldToggleInProgress = true;
 
-    for (int i = 0; i < controller.lineCount; i++) {
-      _getOrComputeFoldRange(i);
+    if (controller.lineCount <= 10000) {
+      for (int i = 0; i < controller.lineCount; i++) {
+        _getOrComputeFoldRange(i);
+      }
+    } else if (_foldRanges.isEmpty && controller.lspFoldRanges == null) {
+      _isFoldToggleInProgress = false;
+      _runAsyncFoldComputation().then((_) {
+        if (!enableFolding) return;
+        _isFoldToggleInProgress = true;
+        _applyFoldAll();
+      });
+      return;
     }
 
+    _applyFoldAll();
+  }
+
+  void _applyFoldAll() {
     for (final fold in _foldRanges.values.where((f) => f != null)) {
       if (!fold!.isFolded) {
         final isNested = _foldRanges.values.any(
@@ -5441,8 +5580,11 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   int? _findMatchingClosingTagLine(String tagName, int startLine) {
     final closeTagPattern = RegExp(r'</' + RegExp.escape(tagName) + r'\s*>');
     int depth = 1;
+    final maxScan = controller.lineCount <= 10000
+        ? controller.lineCount
+        : min(startLine + 10000, controller.lineCount);
 
-    for (int i = startLine + 1; i < controller.lineCount; i++) {
+    for (int i = startLine + 1; i < maxScan; i++) {
       String lineText;
       if (_lineTextCache.containsKey(i)) {
         lineText = _lineTextCache[i]!;
@@ -6004,6 +6146,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   void detach() {
     _resizeTimer?.cancel();
     _layoutDebounceTimer?.cancel();
+    _foldComputeTimer?.cancel();
     super.detach();
   }
 
