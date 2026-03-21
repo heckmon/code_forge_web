@@ -38,11 +38,14 @@ class _SpanData {
 
 class SyntaxHighlighter {
   final Mode language;
+  final List<Mode> extraLanguages;
   final Map<String, TextStyle> editorTheme;
   final TextStyle? baseTextStyle;
   final String? languageId;
   late final String _langId;
   late final Highlight _highlight;
+  late final Map<String, TextStyle> _resolvedTheme;
+  late final List<Mode> _registeredExtraLanguages;
   late final Map<String, List<String>> _semanticMapping;
   final Map<int, HighlightedLine> _grammarCache = {};
   final Map<int, HighlightedLine> _mergedCache = {};
@@ -59,10 +62,19 @@ class SyntaxHighlighter {
     required this.editorTheme,
     this.baseTextStyle,
     this.languageId,
+    this.extraLanguages = const [],
   }) {
     _langId = language.hashCode.toString();
+    _resolvedTheme = _buildResolvedTheme(editorTheme);
     _highlight = Highlight();
     _highlight.registerLanguage(_langId, language);
+
+    _registeredExtraLanguages = <Mode>[...extraLanguages];
+
+    for (final lang in _registeredExtraLanguages) {
+      _registerLanguageWithAliases(_highlight, lang);
+    }
+
     _semanticMapping = getSemanticMapping(languageId ?? '');
   }
 
@@ -213,7 +225,11 @@ class SyntaxHighlighter {
           grammarSegments,
           semanticStart,
         );
-        if (_isStringOrCommentStyle(grammarStyle)) {
+        final preserveGrammar =
+            _isStringOrCommentStyle(grammarStyle) ||
+            _hasMeaningfulGrammarStyle(grammarStyle);
+
+        if (preserveGrammar) {
           children.add(TextSpan(text: actualText, style: grammarStyle));
         } else {
           children.add(TextSpan(text: actualText, style: semantic.style));
@@ -350,6 +366,25 @@ class SyntaxHighlighter {
     return false;
   }
 
+  bool _hasMeaningfulGrammarStyle(TextStyle? style) {
+    if (style == null) return false;
+
+    final rootStyle = baseTextStyle ?? _resolvedTheme['root'];
+    final rootColor = rootStyle?.color;
+
+    if (style.color != null && rootColor != null && style.color != rootColor) {
+      return true;
+    }
+    if (style.fontWeight != null && style.fontWeight != rootStyle?.fontWeight) {
+      return true;
+    }
+    if (style.fontStyle != null && style.fontStyle != rootStyle?.fontStyle) {
+      return true;
+    }
+
+    return false;
+  }
+
   TextStyle? _resolveSemanticStyle(String? tokenTypeName) {
     if (tokenTypeName == null) return null;
 
@@ -358,6 +393,8 @@ class SyntaxHighlighter {
 
     for (final key in hljsKeys) {
       final style = editorTheme[key];
+      final styleFromResolved = _resolvedTheme[key];
+      if (styleFromResolved != null) return styleFromResolved;
       if (style != null) return style;
     }
 
@@ -369,12 +406,125 @@ class SyntaxHighlighter {
 
     try {
       final result = _highlight.highlight(code: lineText, language: _langId);
-      final renderer = TextSpanRenderer(baseTextStyle, editorTheme);
+      final renderer = TextSpanRenderer(baseTextStyle, _resolvedTheme);
       result.render(renderer);
-      return renderer.span;
+      var span = renderer.span;
+      if (_isTsxOrJsx && _looksLikeJsxTagLine(lineText)) {
+        span = _applyJsxTagFallback(lineText, span);
+      }
+      return span;
     } catch (e) {
       return TextSpan(text: lineText, style: baseTextStyle);
     }
+  }
+
+  bool get _isTsxOrJsx {
+    final id = languageId?.toLowerCase().trim();
+    return id == 'tsx' || id == 'jsx';
+  }
+
+  bool _looksLikeJsxTagLine(String line) {
+    return RegExp(r'(^|[^A-Za-z0-9_])<\/?[A-Za-z]').hasMatch(line);
+  }
+
+  TextSpan? _applyJsxTagFallback(String lineText, TextSpan? span) {
+    if (span == null || lineText.isEmpty) return span;
+
+    final tagStyle =
+        _resolvedTheme['tag'] ??
+        _resolvedTheme['name'] ??
+        _resolvedTheme['selector-tag'];
+    if (tagStyle == null) return span;
+
+    final grammarSegments = <({String text, TextStyle? style})>[];
+    _flattenGrammarSpan(span, grammarSegments, baseTextStyle);
+
+    final ranges = <({int start, int end})>[];
+    final tagOpen = RegExp(
+      r'(^|[^A-Za-z0-9_])<\/?\s*([A-Za-z][A-Za-z0-9:_-]*)',
+    );
+
+    for (final match in tagOpen.allMatches(lineText)) {
+      final prefix = match.group(1) ?? '';
+      final leadingStart = match.start + prefix.length;
+      if (leadingStart < 0 || leadingStart >= lineText.length) continue;
+
+      final nameGroup = match.group(2);
+      if (nameGroup == null) continue;
+      final nameStart = match.end - nameGroup.length;
+      final nameEnd = match.end;
+
+      ranges.add((
+        start: leadingStart,
+        end: (nameStart).clamp(leadingStart, lineText.length),
+      ));
+      ranges.add((start: nameStart, end: nameEnd));
+
+      final closeIndex = lineText.indexOf('>', match.end);
+      if (closeIndex != -1) {
+        final beforeClose = closeIndex > 0 ? lineText[closeIndex - 1] : '';
+        if (beforeClose == '/') {
+          ranges.add((start: closeIndex - 1, end: closeIndex));
+        }
+        ranges.add((start: closeIndex, end: closeIndex + 1));
+      }
+    }
+
+    if (ranges.isEmpty) return span;
+
+    ranges.sort((a, b) => a.start.compareTo(b.start));
+
+    final mergedRanges = <({int start, int end})>[];
+    for (final range in ranges) {
+      final start = range.start.clamp(0, lineText.length);
+      final end = range.end.clamp(0, lineText.length);
+      if (end <= start) continue;
+
+      if (mergedRanges.isEmpty || start > mergedRanges.last.end) {
+        mergedRanges.add((start: start, end: end));
+      } else {
+        final last = mergedRanges.removeLast();
+        mergedRanges.add((
+          start: last.start,
+          end: end > last.end ? end : last.end,
+        ));
+      }
+    }
+
+    final children = <TextSpan>[];
+    int current = 0;
+
+    for (final range in mergedRanges) {
+      if (range.start > current) {
+        _addGrammarSegments(
+          children,
+          grammarSegments,
+          current,
+          range.start,
+          lineText,
+        );
+      }
+
+      final existing = _getStyleAtPosition(grammarSegments, range.start);
+      final chosen = _hasMeaningfulGrammarStyle(existing) ? existing : tagStyle;
+      final part = lineText.substring(range.start, range.end);
+      if (part.isNotEmpty) {
+        children.add(TextSpan(text: part, style: chosen));
+      }
+      current = range.end;
+    }
+
+    if (current < lineText.length) {
+      _addGrammarSegments(
+        children,
+        grammarSegments,
+        current,
+        lineText.length,
+        lineText,
+      );
+    }
+
+    return TextSpan(style: baseTextStyle, children: children);
   }
 
   ui.Paragraph buildHighlightedParagraph(
@@ -494,7 +644,8 @@ class SyntaxHighlighter {
         langId: _langId,
         lines: linesToProcess,
         languageMode: language,
-        theme: editorTheme,
+        extraLanguages: _registeredExtraLanguages,
+        theme: _resolvedTheme,
         baseStyle: baseTextStyle,
       ),
     );
@@ -513,7 +664,9 @@ class SyntaxHighlighter {
   TextSpan? _spanDataToTextSpan(_SpanData? data) {
     if (data == null) return null;
 
-    final style = data.scope != null ? editorTheme[data.scope] : baseTextStyle;
+    final style = data.scope != null
+        ? _resolvedTheme[data.scope]
+        : baseTextStyle;
 
     if (data.children.isEmpty) {
       return TextSpan(text: data.text, style: style);
@@ -524,6 +677,19 @@ class SyntaxHighlighter {
       style: style,
       children: data.children.map((c) => _spanDataToTextSpan(c)!).toList(),
     );
+  }
+
+  Map<String, TextStyle> _buildResolvedTheme(Map<String, TextStyle> theme) {
+    final resolved = Map<String, TextStyle>.from(theme);
+
+    if (!resolved.containsKey('tag')) {
+      final fallbackTagStyle = resolved['selector-tag'] ?? resolved['name'];
+      if (fallbackTagStyle != null) {
+        resolved['tag'] = fallbackTagStyle;
+      }
+    }
+
+    return resolved;
   }
 
   void dispose() {
@@ -538,6 +704,7 @@ class _BackgroundHighlightData {
   final String langId;
   final Map<int, String> lines;
   final Mode languageMode;
+  final List<Mode> extraLanguages;
   final Map<String, TextStyle> theme;
   final TextStyle? baseStyle;
 
@@ -545,6 +712,7 @@ class _BackgroundHighlightData {
     required this.langId,
     required this.lines,
     required this.languageMode,
+    required this.extraLanguages,
     required this.theme,
     this.baseStyle,
   });
@@ -555,6 +723,9 @@ Map<int, _SpanData?> _highlightLinesInBackground(
 ) {
   final highlight = Highlight();
   highlight.registerLanguage(data.langId, data.languageMode);
+  for (final lang in data.extraLanguages) {
+    _registerLanguageWithAliases(highlight, lang);
+  }
 
   final results = <int, _SpanData?>{};
 
@@ -579,6 +750,24 @@ Map<int, _SpanData?> _highlightLinesInBackground(
   }
 
   return results;
+}
+
+void _registerLanguageWithAliases(Highlight highlight, Mode language) {
+  if (language.name == null) return;
+
+  final normalizedName = language.name!.toLowerCase().trim();
+  highlight.registerLanguage(normalizedName, language);
+
+  for (final token in normalizedName.split(RegExp(r'[^a-z0-9_+#-]+'))) {
+    if (token.isNotEmpty) {
+      highlight.registerLanguage(token, language);
+    }
+  }
+
+  for (final alias in language.aliases ?? const <String>[]) {
+    final normalizedAlias = alias.toLowerCase();
+    highlight.registerLanguage(normalizedAlias, language);
+  }
 }
 
 _SpanData _textSpanToSpanData(TextSpan span) {

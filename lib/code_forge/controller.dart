@@ -3548,11 +3548,11 @@ class CodeForgeWebController implements DeltaTextInputClient {
       case 26:
         return 'typeParameter';
       case 252:
-        return 'type'; // Type alias
+        return 'type';
       case 253:
         return 'parameter';
       case 254:
-        return 'variable'; // StaticMethod
+        return 'variable';
       case 255:
         return 'macro';
       default:
