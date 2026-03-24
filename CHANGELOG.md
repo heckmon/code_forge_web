@@ -32,3 +32,6 @@
 
 ## 2.3.0
  - Synced with code_forge 9.3.0
+
+## 2.4.0
+ - Synced with code_forge 9.4.0
