@@ -832,31 +832,49 @@ class CodeForgeWebController implements DeltaTextInputClient {
         defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS;
 
-    int? index;
-    if (isMobile && currentlySelectedSuggestion != null) {
-      index = currentlySelectedSuggestion;
-    } else {
-      index = selectedIndex;
+    final safeSelectedIndex = isMobile
+        ? (currentlySelectedSuggestion ?? 0).clamp(0, suggestions.length - 1)
+        : selectedIndex.clamp(0, suggestions.length - 1);
+    final selected = suggestions[safeSelectedIndex];
+    final insertText = _extractSuggestionText(selected);
+
+    if (insertText.isNotEmpty) {
+      insertAtCurrentCursor(insertText, replaceTypedChar: true);
     }
-
-    if (index == null || index < 0 || index >= suggestions.length) return;
-
-    final suggestion = suggestions[index];
-    String textToInsert;
-
-    if (suggestion is LspCompletion) {
-      textToInsert = suggestion.label;
-    } else if (suggestion is Map) {
-      textToInsert =
-          (suggestion['insertText'] ?? suggestion['label']) as String;
-    } else {
-      textToInsert = suggestion.toString();
-    }
-
-    insertAtCurrentCursor(textToInsert, replaceTypedChar: true);
 
     suggestionsNotifier.value = null;
-    currentlySelectedSuggestion = null;
+    currentlySelectedSuggestion = 0;
+  }
+
+  String _extractSuggestionText(dynamic suggestion) {
+    if (suggestion is LspCompletion) {
+      return suggestion.label;
+    }
+    if (suggestion is Map) {
+      final dynamic insertText =
+          suggestion['insertText'] ??
+          suggestion['value'] ??
+          suggestion['label'];
+      return insertText is String ? insertText : '';
+    }
+    if (suggestion is String) {
+      return suggestion;
+    }
+
+    final dynamic dynamicSuggestion = suggestion;
+    try {
+      final dynamic insertText = dynamicSuggestion.insertText;
+      if (insertText is String && insertText.isNotEmpty) return insertText;
+    } catch (_) {}
+    try {
+      final dynamic value = dynamicSuggestion.value;
+      if (value is String && value.isNotEmpty) return value;
+    } catch (_) {}
+    try {
+      final dynamic label = dynamicSuggestion.label;
+      if (label is String) return label;
+    } catch (_) {}
+    return '';
   }
 
   /// Adds a line decoration to the editor.
@@ -2098,7 +2116,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
             _isMobile &&
             currentlySelectedSuggestion != null) {
           final sugg = suggestionsNotifier.value![currentlySelectedSuggestion!];
-          final text = sugg is LspCompletion ? sugg.label : sugg as String;
+          final text = _extractSuggestionText(sugg);
           insertAtCurrentCursor(text, replaceTypedChar: true);
           suggestionsNotifier.value = null;
           currentlySelectedSuggestion = null;

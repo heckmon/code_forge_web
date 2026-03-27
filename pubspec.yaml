@@ -1,10 +1,10 @@
 name: code_forge_web
 description: "The web version of the powerful code_forge package"
-version: 2.4.0
+version: 2.5.0
 homepage: https://github.com/heckmon/code_forge_web
 
 environment:
-  sdk: ^3.11.3
+  sdk: ^3.11.4
   flutter: ">=1.17.0"
 
 dependencies:
@@ -14,7 +14,7 @@ dependencies:
   http: ^1.2.2
   markdown_widget: ^2.3.2+8
   re_highlight: ^0.0.3
-  vector_math: ^2.1.4
+  vector_math: ^2.2.0
   web_socket_channel: ^3.0.3
 
 dev_dependencies:
