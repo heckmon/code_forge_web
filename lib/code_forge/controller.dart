@@ -627,8 +627,6 @@ class CodeForgeWebController implements DeltaTextInputClient {
     _updateMultiCursorsFromList(updated);
   }
 
-  /// Replaces the secondary-cursor list with [positions], deduplicating
-  /// against the primary cursor and against duplicate entries.
   void _updateMultiCursorsFromList(
     List<({int line, int character})> positions,
   ) {

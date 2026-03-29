@@ -108,7 +108,6 @@ class FindController extends ChangeNotifier {
     if (_isActive == value) return;
     _isActive = value;
     if (_isActive) {
-      // Small delay to ensure widget is built before focusing, prevents focus to replace input.
       Future.microtask(() => findInputFocusNode.requestFocus());
       if (_lastQuery.isNotEmpty) {
         _reperformSearch();
@@ -291,14 +290,16 @@ class FindController extends ChangeNotifier {
   void _scrollToCurrentMatch() {
     if (_currentMatchIndex >= 0 && _currentMatchIndex < _matches.length) {
       final match = _matches[_currentMatchIndex];
+      final matchLine = _codeController.getLineAtOffset(match.start);
       _codeController.setSelectionSilently(
-        TextSelection(baseOffset: match.start, extentOffset: match.end),
+        TextSelection.collapsed(offset: match.start),
       );
-      _codeController.selectionOnly = true;
-      _codeController.notifyListeners();
 
-      // removes selection
-      _codeController.setSelectionSilently(TextSelection.collapsed(offset: 0));
+      try {
+        _codeController.scrollToLine(matchLine);
+      } on StateError {
+        //
+      }
     }
   }
 

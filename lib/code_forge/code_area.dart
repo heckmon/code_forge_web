@@ -11,8 +11,7 @@ import 'syntax_highlighter.dart';
 import 'undo_redo.dart';
 
 import 'package:re_highlight/re_highlight.dart';
-import 'package:re_highlight/styles/vs2015.dart';
-import 'package:re_highlight/languages/dart.dart';
+import 'package:re_highlight/styles/lightfair.dart';
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -346,8 +345,8 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
     _hscrollController =
         widget.horizontalScrollController ?? ScrollController();
     _vscrollController = widget.verticalScrollController ?? ScrollController();
-    _editorTheme = widget.editorTheme ?? vs2015Theme;
-    _language = widget.language ?? langDart;
+    _editorTheme = widget.editorTheme ?? lightfairTheme;
+    _language = widget.language ?? Mode();
     _suggestionNotifier = _controller.suggestionsNotifier;
     _prevSnippetTextLength = _controller.text.length;
     _diagnosticsNotifier = _controller.diagnosticsNotifier;
@@ -5509,9 +5508,16 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
 
     final hasActiveFolds = _hasActiveFolds;
     final targetY = _getLineYOffset(line, hasActiveFolds);
+    final targetLineHeight = lineWrap
+        ? _getWrappedLineHeight(line)
+        : _lineHeight;
+    final topPadding = innerPadding?.top ?? 0;
+    final bottomPadding = innerPadding?.bottom ?? 0;
     final viewportHeight = vscrollController.position.viewportDimension;
+    final visibleHeight = max(0.0, viewportHeight - topPadding - bottomPadding);
+    final centerHeight = visibleHeight > 0 ? visibleHeight : viewportHeight;
     final maxScroll = vscrollController.position.maxScrollExtent;
-    double scrollTarget = targetY - (viewportHeight / 2) + (_lineHeight / 2);
+    double scrollTarget = targetY + (targetLineHeight / 2) - (centerHeight / 2);
 
     scrollTarget = scrollTarget.clamp(0.0, maxScroll);
 

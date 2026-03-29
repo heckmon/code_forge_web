@@ -38,3 +38,6 @@
 
 ## 2.5.0
  - Synced with code_forge 9.5.0
+
+## 2.6.0
+ - Synced with code_forge 9.6.0
