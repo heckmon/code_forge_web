@@ -1,6 +1,8 @@
 import 'package:code_forge_web/code_forge_web.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:re_highlight/languages/dart.dart';
+import 'package:re_highlight/styles/vs2015.dart';
 
 void main() {
   runApp(const MyApp());
@@ -35,6 +37,8 @@ class _MyAppState extends State<MyApp> {
       home: Scaffold(
         body: SafeArea(
           child: CodeForgeWeb(
+            editorTheme: vs2015Theme,
+            language: langDart,
             fileUrl:
                 "https://raw.githubusercontent.com/heckmon/code_forge/refs/heads/main/lib/code_forge/syntax_highlighter.dart",
             controller: controller,

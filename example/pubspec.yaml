@@ -14,6 +14,7 @@ dependencies:
   code_forge_web: { path: ../ }
   google_fonts: ^8.0.0
   http: ^1.6.0
+  re_highlight: ^0.0.3
 
 dev_dependencies:
   flutter_test:
