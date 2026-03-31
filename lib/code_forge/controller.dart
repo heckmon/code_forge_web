@@ -48,10 +48,13 @@ class CodeForgeWebController implements DeltaTextInputClient {
   Timer? _flushTimer, _semanticTokenTimer, _codeActionTimer, _syncTimer;
   Timer? _documentColorTimer, _debounceTimer;
   Timer? _foldRangesTimer, _documentHighlightTimer, _cclsRefreshTimer;
+  Timer? _lspTypingTimer;
+  static const Duration _lspTypingDebounce = Duration(milliseconds: 300);
   String? _cachedText, _bufferLineText, openedFile;
   String _previousValue = "";
   TextSelection _prevSelection = const TextSelection.collapsed(offset: 0);
   bool _bufferDirty = false, bufferNeedsRepaint = false, selectionOnly = false;
+  List<String>? _cachedBufferLines;
   int _bufferLineRopeStart = 0, _bufferLineOriginalLength = 0;
   int _cachedTextVersion = -1, _currentVersion = 0, _semanticTokensVersion = 0;
   int? dirtyLine, _bufferLineIndex;
@@ -281,39 +284,54 @@ class CodeForgeWebController implements DeltaTextInputClient {
 
   Future<void> _highlightListener() async {
     if (text != _previousValue && _lspReady) {
-      await lspConfig!.updateDocument(openedFile!, text);
+      final currentText = text;
+      final currentSelection = selection;
+      final isTypingLenMatch =
+          currentText.length == _previousValue.length + 1 &&
+          currentSelection.extentOffset == _prevSelection.extentOffset + 1 &&
+          _isTyping;
 
-      if (_usesCclsSemanticHighlight && !_isDisposed) {
-        semanticTokens.value = (null, _semanticTokensVersion++);
-        _scheduleCclsRefresh();
-      }
+      _lspTypingTimer?.cancel();
+      _lspTypingTimer = Timer(_lspTypingDebounce, () async {
+        if (_isDisposed || !_lspReady || openedFile == null) return;
 
-      _scheduleSemantictokenRefresh();
-      _scheduleDocumentColorRefresh();
-      _scheduleFoldRangesRefresh();
-      if (text.length == _previousValue.length + 1 &&
-          selection.extentOffset == _prevSelection.extentOffset + 1 &&
-          _isTyping) {
-        final cursorPosition = selection.extentOffset;
-        final line = getLineAtOffset(cursorPosition);
-        final lineStartOffset = getLineStartOffset(line);
-        final character = cursorPosition - lineStartOffset;
-        final prefix = getCurrentWordPrefix(text, cursorPosition);
-        _suggestions = await lspConfig!.getCompletions(
-          openedFile!,
-          getLineAtOffset(selection.extentOffset),
-          character,
-        );
-        _sortSuggestions(prefix);
-        final triggerChar = text[cursorPosition - 1];
-        if (!_isAlpha(triggerChar)) {
-          if (!_isDisposed) suggestionsNotifier.value = null;
-          return;
+        await lspConfig!.updateDocument(openedFile!, currentText);
+
+        if (_usesCclsSemanticHighlight && !_isDisposed) {
+          semanticTokens.value = (null, _semanticTokensVersion++);
+          _scheduleCclsRefresh();
         }
-        if (!_isDisposed) suggestionsNotifier.value = _suggestions;
-      } else {
-        if (!_isDisposed) suggestionsNotifier.value = null;
-      }
+
+        _scheduleSemantictokenRefresh();
+        _scheduleDocumentColorRefresh();
+        _scheduleFoldRangesRefresh();
+
+        if (isTypingLenMatch) {
+          final cursorPosition = currentSelection.extentOffset;
+          final line = getLineAtOffset(cursorPosition);
+          final lineStartOffset = getLineStartOffset(line);
+          if (cursorPosition - 1 >= currentText.length) return;
+          final character = cursorPosition - lineStartOffset;
+          final prefix = getCurrentWordPrefix(currentText, cursorPosition);
+          final triggerChar = currentText[cursorPosition - 1];
+          final isTriggerChar = _isCompletionTriggerChar(triggerChar);
+          final isAlphaChar = _isAlpha(triggerChar);
+
+          if ((isTriggerChar || isAlphaChar) && !_isDisposed) {
+            _suggestions = await lspConfig!.getCompletions(
+              openedFile!,
+              line,
+              character,
+            );
+            _sortSuggestions(prefix);
+            if (!_isDisposed) suggestionsNotifier.value = _suggestions;
+          } else {
+            if (!_isDisposed) suggestionsNotifier.value = null;
+          }
+        } else {
+          if (!_isDisposed) suggestionsNotifier.value = null;
+        }
+      });
     }
     _previousValue = text;
     _prevSelection = selection;
@@ -1805,6 +1823,11 @@ class CodeForgeWebController implements DeltaTextInputClient {
 
   /// The total number of lines in the document.
   int get lineCount {
+    if (_bufferLineIndex != null && _bufferDirty) {
+      _cachedBufferLines ??= _bufferLineText!.split('\n');
+      final newLines = _cachedBufferLines!.length - 1;
+      return _rope.lineCount + newLines;
+    }
     return _rope.lineCount;
   }
 
@@ -1833,10 +1856,23 @@ class CodeForgeWebController implements DeltaTextInputClient {
   /// [lineIndex] is zero-based (0 for the first line).
   /// Returns the text of the line without the newline character.
   String getLineText(int lineIndex) {
-    if (_bufferLineIndex != null &&
-        lineIndex == _bufferLineIndex &&
-        _bufferDirty) {
-      return _bufferLineText!;
+    if (_bufferLineIndex != null && _bufferDirty) {
+      _cachedBufferLines ??= _bufferLineText!.split('\n');
+      final newLines = _cachedBufferLines!.length - 1;
+      if (newLines > 0) {
+        if (lineIndex >= _bufferLineIndex! &&
+            lineIndex <= _bufferLineIndex! + newLines) {
+          return _cachedBufferLines![lineIndex - _bufferLineIndex!];
+        } else if (lineIndex > _bufferLineIndex! + newLines) {
+          return _rope.getLineText(lineIndex - newLines);
+        } else {
+          return _rope.getLineText(lineIndex);
+        }
+      } else {
+        if (lineIndex == _bufferLineIndex) {
+          return _bufferLineText!;
+        }
+      }
     }
     return _rope.getLineText(lineIndex);
   }
@@ -1850,10 +1886,13 @@ class CodeForgeWebController implements DeltaTextInputClient {
       final bufferStart = _bufferLineRopeStart;
       final bufferEnd = bufferStart + _bufferLineText!.length;
       if (charOffset >= bufferStart && charOffset <= bufferEnd) {
-        return _bufferLineIndex!;
+        final localOffset = charOffset - bufferStart;
+        final sub = _bufferLineText!.substring(0, localOffset);
+        return _bufferLineIndex! + '\n'.allMatches(sub).length;
       } else if (charOffset > bufferEnd) {
         final delta = _bufferLineText!.length - _bufferLineOriginalLength;
-        return _rope.getLineAtOffset(charOffset - delta);
+        final newLines = '\n'.allMatches(_bufferLineText!).length;
+        return _rope.getLineAtOffset(charOffset - delta) + newLines;
       }
     }
     return _rope.getLineAtOffset(charOffset);
@@ -1862,18 +1901,31 @@ class CodeForgeWebController implements DeltaTextInputClient {
   /// Gets the character offset where a line starts.
   ///
   /// [lineIndex] is zero-based (0 for the first line).
-  /// Returns the character offset of the first character in that line.
   int getLineStartOffset(int lineIndex) {
-    if (_bufferLineIndex != null &&
-        lineIndex == _bufferLineIndex &&
-        _bufferDirty) {
-      return _bufferLineRopeStart;
-    }
-    if (_bufferLineIndex != null &&
-        lineIndex > _bufferLineIndex! &&
-        _bufferDirty) {
-      final delta = _bufferLineText!.length - _bufferLineOriginalLength;
-      return _rope.getLineStartOffset(lineIndex) + delta;
+    if (_bufferLineIndex != null && _bufferDirty) {
+      final newLines = '\n'.allMatches(_bufferLineText!).length;
+      if (newLines > 0) {
+        if (lineIndex == _bufferLineIndex!) {
+          return _bufferLineRopeStart;
+        } else if (lineIndex > _bufferLineIndex! &&
+            lineIndex <= _bufferLineIndex! + newLines) {
+          final lines = _bufferLineText!.split('\n');
+          int offset = _bufferLineRopeStart;
+          for (int i = 0; i < lineIndex - _bufferLineIndex!; i++) {
+            offset += lines[i].length + 1;
+          }
+          return offset;
+        } else if (lineIndex > _bufferLineIndex! + newLines) {
+          final delta = _bufferLineText!.length - _bufferLineOriginalLength;
+          return _rope.getLineStartOffset(lineIndex - newLines) + delta;
+        }
+      } else {
+        if (lineIndex == _bufferLineIndex!) return _bufferLineRopeStart;
+        if (lineIndex > _bufferLineIndex!) {
+          final delta = _bufferLineText!.length - _bufferLineOriginalLength;
+          return _rope.getLineStartOffset(lineIndex) + delta;
+        }
+      }
     }
     return _rope.getLineStartOffset(lineIndex);
   }
@@ -1926,7 +1978,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
 
     _flushBuffer();
 
-    final textLength = text.length;
+    final textLength = length;
     final clampedBase = newSelection.baseOffset.clamp(0, textLength);
     final clampedExtent = newSelection.extentOffset.clamp(0, textLength);
     newSelection = newSelection.copyWith(
@@ -1947,7 +1999,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
 
     _flushBuffer();
 
-    final textLength = text.length;
+    final textLength = length;
     final clampedBase = newSelection.baseOffset.clamp(0, textLength);
     final clampedExtent = newSelection.extentOffset.clamp(0, textLength);
     newSelection = newSelection.copyWith(
@@ -2395,6 +2447,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
           _bufferLineText!.substring(0, localOffset) +
           _bufferLineText!.substring(localOffset + 1);
       _bufferDirty = true;
+      _cachedBufferLines = null;
       _selection = TextSelection.collapsed(offset: deleteOffset);
       _currentVersion++;
       dirtyLine = lineIndex;
@@ -2567,6 +2620,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
           _bufferLineText!.substring(0, localOffset) +
           _bufferLineText!.substring(localOffset + 1);
       _bufferDirty = true;
+      _cachedBufferLines = null;
       _currentVersion++;
       dirtyLine = lineIndex;
 
@@ -3388,6 +3442,11 @@ class CodeForgeWebController implements DeltaTextInputClient {
         (code >= 0x0590 && code <= 0x05FF);
   }
 
+  bool _isCompletionTriggerChar(String s) {
+    if (s.isEmpty) return false;
+    return s == '.' || s == ':' || s == '>' || s == '/' || s == '@';
+  }
+
   Future<void> _fetchSemanticTokensFull() async {
     if (lspConfig == null) return;
     if (_usesCclsSemanticHighlight) {
@@ -3413,8 +3472,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
 
   List<LspSemanticToken> _convertCclsSymbolsToTokens(List<dynamic> symbols) {
     final tokens = <LspSemanticToken>[];
-    final documentText = text;
-    final byteOffsetMap = _buildByteOffsetMap(documentText);
+    final maxLen = length;
 
     for (final symbol in symbols) {
       if (symbol is! Map<String, dynamic>) continue;
@@ -3448,17 +3506,25 @@ class CodeForgeWebController implements DeltaTextInputClient {
           if (range is! Map<String, dynamic>) continue;
           final startByte = range['L'] as int?;
           final endByte = range['R'] as int?;
-          if (startByte == null || endByte == null) continue;
+          if (startByte == null ||
+              endByte == null ||
+              startByte < 0 ||
+              endByte > maxLen) {
+            continue;
+          }
 
-          final startPos = _byteOffsetToLineChar(byteOffsetMap, startByte);
-          final endPos = _byteOffsetToLineChar(byteOffsetMap, endByte);
+          final startLine = getLineAtOffset(startByte);
+          final startChar = startByte - getLineStartOffset(startLine);
 
-          if (startPos != null && endPos != null && startPos.$1 == endPos.$1) {
+          final endLine = getLineAtOffset(endByte);
+          final endChar = endByte - getLineStartOffset(endLine);
+
+          if (startLine == endLine) {
             tokens.add(
               LspSemanticToken(
-                line: startPos.$1,
-                start: startPos.$2,
-                length: endPos.$2 - startPos.$2,
+                line: startLine,
+                start: startChar,
+                length: endChar - startChar,
                 typeIndex: kind,
                 modifierBitmask: storage,
                 tokenTypeName: tokenTypeName,
@@ -3470,41 +3536,6 @@ class CodeForgeWebController implements DeltaTextInputClient {
     }
 
     return tokens;
-  }
-
-  List<int> _buildByteOffsetMap(String text) {
-    final offsets = <int>[0];
-    int currentOffset = 0;
-
-    for (int i = 0; i < text.length; i++) {
-      currentOffset++;
-      if (text[i] == '\n') {
-        offsets.add(currentOffset);
-      }
-    }
-
-    return offsets;
-  }
-
-  (int, int)? _byteOffsetToLineChar(List<int> lineOffsets, int byteOffset) {
-    if (byteOffset < 0) return null;
-
-    int low = 0;
-    int high = lineOffsets.length - 1;
-
-    while (low < high) {
-      final mid = (low + high + 1) ~/ 2;
-      if (lineOffsets[mid] <= byteOffset) {
-        low = mid;
-      } else {
-        high = mid - 1;
-      }
-    }
-
-    final line = low;
-    final charOffset = byteOffset - lineOffsets[line];
-
-    return (line, charOffset);
   }
 
   String _cclsSymbolKindToTokenType(int kind) {
@@ -3777,6 +3808,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
     _bufferLineIndex = null;
     _bufferLineText = null;
     _bufferDirty = false;
+    _cachedBufferLines = null;
 
     dirtyLine = lineToInvalidate;
     notifyListeners();
@@ -3877,6 +3909,76 @@ class CodeForgeWebController implements DeltaTextInputClient {
         );
       }
 
+      bool insertedViaBuffer = false;
+      if (_bufferLineIndex != null && _bufferDirty) {
+        final bufferEnd = _bufferLineRopeStart + _bufferLineText!.length;
+        if (offset >= _bufferLineRopeStart && offset <= bufferEnd) {
+          final localOffset = offset - _bufferLineRopeStart;
+          if (localOffset >= 0 && localOffset <= _bufferLineText!.length) {
+            _bufferLineText =
+                _bufferLineText!.substring(0, localOffset) +
+                actualInsertedText +
+                _bufferLineText!.substring(localOffset);
+            _bufferDirty = true;
+            _cachedBufferLines = null;
+            _selection = actualSelection;
+            _currentVersion++;
+            dirtyLine = _bufferLineIndex;
+
+            insertedViaBuffer = true;
+          }
+        }
+        if (!insertedViaBuffer) {
+          _flushBuffer();
+        }
+      }
+
+      if (!insertedViaBuffer) {
+        final lineIndex = _rope.getLineAtOffset(offset);
+        _initBuffer(lineIndex);
+        final localOffset = offset - _bufferLineRopeStart;
+        if (localOffset >= 0 && localOffset <= _bufferLineText!.length) {
+          _bufferLineText =
+              _bufferLineText!.substring(0, localOffset) +
+              actualInsertedText +
+              _bufferLineText!.substring(localOffset);
+          _bufferDirty = true;
+          _cachedBufferLines = null;
+          _selection = actualSelection;
+          _currentVersion++;
+          dirtyLine = lineIndex;
+
+          insertedViaBuffer = true;
+        }
+      }
+
+      if (insertedViaBuffer) {
+        lineStructureChanged = true;
+        dirtyRegion = TextRange(
+          start: offset,
+          end: offset + actualInsertedText.length,
+        );
+
+        _recordInsertion(
+          offset,
+          actualInsertedText,
+          selectionBefore,
+          actualSelection,
+        );
+
+        if (connection != null && connection!.attached) {
+          _lastSentText = text;
+          _lastSentSelection = _selection;
+          connection!.setEditingState(
+            TextEditingValue(text: _lastSentText!, selection: _selection),
+          );
+        }
+
+        _scheduleFlush();
+        notifyListeners();
+        return;
+      }
+
       _flushBuffer();
       _rope.insert(offset, actualInsertedText);
       _currentVersion++;
@@ -3958,6 +4060,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
             actualInsertedText +
             _bufferLineText!.substring(localOffset);
         _bufferDirty = true;
+        _cachedBufferLines = null;
         _selection = actualSelection;
         _currentVersion++;
         dirtyLine = lineIndex;
@@ -4024,6 +4127,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
           actualInsertedText +
           _bufferLineText!.substring(localOffset);
       _bufferDirty = true;
+      _cachedBufferLines = null;
       _selection = actualSelection;
       _currentVersion++;
       dirtyLine = lineIndex;
@@ -4151,6 +4255,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
           _bufferLineText!.substring(0, localStart) +
           _bufferLineText!.substring(localEnd);
       _bufferDirty = true;
+      _cachedBufferLines = null;
       _selection = newSelection;
       _currentVersion++;
 

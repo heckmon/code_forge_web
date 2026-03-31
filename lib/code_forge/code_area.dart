@@ -4040,7 +4040,12 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     if (startLine <= 0) {
       _foldRanges.clear();
     } else {
-      _foldRanges.removeWhere((key, _) => key >= startLine);
+      final maxFoldKey = _foldRanges.keys.isEmpty
+          ? 0
+          : _foldRanges.keys.reduce((a, b) => a > b ? a : b);
+      for (int i = startLine; i <= maxFoldKey; i++) {
+        _foldRanges.remove(i);
+      }
     }
     _foldedLineCacheDirty = true;
     if (enableFolding && controller.lineCount > 10000) {
@@ -4178,11 +4183,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
 
     _asyncFoldComputationPending = true;
 
-    final lineCount = controller.lineCount;
-    final lines = List<String>.generate(
-      lineCount,
-      (i) => controller.getLineText(i),
-    );
+    final lines = List<String>.from(controller.lines);
 
     try {
       final computed = await compute(_computeAllFoldsInBackground, {
@@ -5038,18 +5039,13 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       _cachedLineCount = newLineCount;
 
       final startInvalidation = insertionLine > 0 ? insertionLine - 1 : 0;
-      _lineTextCache.removeWhere((key, _) => key >= startInvalidation);
-      _lineWidthCache.removeWhere((key, _) => key >= startInvalidation);
-      _paragraphCache.removeWhere((key, _) => key >= startInvalidation);
-      _lineHeightCache.removeWhere((key, _) => key >= startInvalidation);
-      _syntaxHighlighter.invalidateLines(
-        Set.from(
-          List.generate(
-            newLineCount - startInvalidation,
-            (i) => startInvalidation + i,
-          ),
-        ),
-      );
+      for (int i = startInvalidation; i <= newLineCount; i++) {
+        _lineTextCache.remove(i);
+        _lineWidthCache.remove(i);
+        _paragraphCache.remove(i);
+        _lineHeightCache.remove(i);
+      }
+      _syntaxHighlighter.invalidateRange(startInvalidation, newLineCount);
 
       if (enableGutter && gutterStyle.gutterWidth == null) {
         final fontSize = textStyle?.fontSize ?? 14.0;
@@ -6243,9 +6239,14 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     final lineCount = controller.lineCount;
 
     if (lineCount != _cachedLineCount) {
-      _lineWidthCache.removeWhere((key, _) => key >= lineCount);
-      _lineTextCache.removeWhere((key, _) => key >= lineCount);
-      _lineHeightCache.removeWhere((key, _) => key >= lineCount);
+      final maxKey = _lineTextCache.keys.isEmpty
+          ? 0
+          : _lineTextCache.keys.reduce((a, b) => a > b ? a : b);
+      for (int i = lineCount; i <= maxKey; i++) {
+        _lineWidthCache.remove(i);
+        _lineTextCache.remove(i);
+        _lineHeightCache.remove(i);
+      }
     }
 
     if (isRTL && !lineWrap) {
@@ -10450,16 +10451,14 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   }
 
   Map<String, int> _offsetToLineChar(int offset) {
-    int accum = 0;
-    for (int i = 0; i < controller.lineCount; i++) {
-      final lineLen = controller.getLineText(i).length;
-      if (offset >= accum && offset <= accum + lineLen) {
-        return {'line': i, 'character': offset - accum};
-      }
-      accum += lineLen + 1;
+    if (offset < 0) return {'line': 0, 'character': 0};
+    if (offset >= controller.length) {
+      final last = controller.lineCount - 1;
+      return {'line': last, 'character': controller.getLineText(last).length};
     }
-    final last = controller.lineCount - 1;
-    return {'line': last, 'character': controller.getLineText(last).length};
+    final line = controller.getLineAtOffset(offset);
+    final startOffset = controller.getLineStartOffset(line);
+    return {'line': line, 'character': offset - startOffset};
   }
 
   @override
