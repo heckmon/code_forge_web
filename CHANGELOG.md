@@ -44,3 +44,6 @@
  
 ## 2.7.0
  - Synced with code_forge 9.7.0
+
+ ## 2.8.0
+ - Synced with code_forge 9.8.0

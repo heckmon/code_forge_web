@@ -81,6 +81,7 @@ sealed class LspConfig {
   }) {
     _initOptions.addAll({
       "highlight": {'enabled': true},
+      ...initializationOptions
     });
   }
 
@@ -172,7 +173,7 @@ sealed class LspConfig {
       textDocumentCapabilities['completion'] = {
         'completionItem': {
           'resolveSupport': {
-            'properties': ['documentaion', 'detail', 'additionalTextEdits'],
+            'properties': ['documentation', 'detail', 'additionalTextEdits'],
           },
           'snippetSupport': false,
         },

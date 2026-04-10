@@ -8006,13 +8006,22 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
           _paragraphCache[lineIndex] = para;
         }
 
-        final lineStartChar = (lineIndex == startLine) ? startChar : 0;
-        final lineEndChar = (lineIndex == endLine)
-            ? endChar.clamp(0, lineText.length)
-            : lineText.length;
+        final lineStartChar = ((lineIndex == startLine) ? startChar : 0).clamp(
+          0,
+          lineText.length,
+        );
+        int lineEndChar = ((lineIndex == endLine) ? endChar : lineText.length)
+            .clamp(0, lineText.length);
 
-        if (lineStartChar >= lineEndChar || lineStartChar >= lineText.length) {
+        if (lineStartChar >= lineText.length) {
           continue;
+        }
+
+        if (lineStartChar >= lineEndChar) {
+          lineEndChar = (lineStartChar + 1).clamp(0, lineText.length);
+          if (lineStartChar >= lineEndChar) {
+            continue;
+          }
         }
 
         final boxKey = '$lineIndex-$lineStartChar-$lineEndChar';
