@@ -81,7 +81,7 @@ sealed class LspConfig {
   }) {
     _initOptions.addAll({
       "highlight": {'enabled': true},
-      ...initializationOptions
+      ...initializationOptions,
     });
   }
 
