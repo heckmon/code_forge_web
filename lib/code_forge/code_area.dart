@@ -3967,11 +3967,11 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   late double _lineHeight;
   final _dtap = DoubleTapGestureRecognizer();
   final _onetap = TapGestureRecognizer();
-  late final double _gutterPadding;
+  late double _gutterPadding;
   late final Paint _caretPainter;
   late final Paint _bracketHighlightPainter;
   late ui.ParagraphStyle _paragraphStyle;
-  late final ui.TextStyle _uiTextStyle;
+  late ui.TextStyle _uiTextStyle;
   late SyntaxHighlighter _syntaxHighlighter;
   late double _gutterWidth;
   TextStyle? _ghostTextStyle;
@@ -4000,7 +4000,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   bool _draggingStartHandle = false, _draggingEndHandle = false;
   bool _showBubble = false, _draggingCHandle = false, _readOnly;
   bool _isDeferringLayout = false, _hasCachedHeight = false;
-  bool _isCachedHeightExact = false;
+  bool _isCachedHeightExact = false, _caretSyncAfterLayoutScheduled = false;
   TextDirection _textDirection;
   Map<int, FoldRange>? _lastLspFoldRanges;
   Rect? _startHandleRect, _endHandleRect, _normalHandle;
@@ -4601,9 +4601,42 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     _textStyle = style;
 
     final fontSize = style?.fontSize ?? 14.0;
+    final fontFamily = style?.fontFamily;
+    final color = style?.color ?? _editorTheme['root']?.color ?? Colors.black;
     final lineHeightMultiplier = style?.height ?? 1.2;
 
     _lineHeight = fontSize * lineHeightMultiplier;
+    _paragraphStyle = ui.ParagraphStyle(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      height: lineHeightMultiplier,
+      textDirection: _textDirection,
+      textAlign: ui.TextAlign.start,
+    );
+    _uiTextStyle = ui.TextStyle(
+      color: color,
+      fontSize: fontSize,
+      fontFamily: fontFamily,
+    );
+
+    _gutterPadding = fontSize;
+    if (_enableGutter) {
+      if (_gutterStyle.gutterWidth != null) {
+        _gutterWidth = _gutterStyle.gutterWidth!;
+      } else {
+        final digits = controller.lineCount.toString().length;
+        final digitWidth = digits * _gutterPadding * 0.6;
+        final foldIconSpace = _enableFolding ? fontSize + 4 : 0;
+        _gutterWidth = digitWidth + foldIconSpace + _gutterPadding;
+      }
+    } else {
+      _gutterWidth = 0;
+    }
+
+    if (_selectionStyle.cursorColor == null) {
+      _caretPainter.color = color;
+    }
+    _bracketHighlightPainter.color = color;
 
     try {
       _syntaxHighlighter.dispose();
@@ -4628,6 +4661,10 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     _lineOffsetCache.clear();
     _caretInfoCache.clear();
     _lineIndentCache.clear();
+    _longLineWidth = 0.0;
+    _cachedRtlContentWidth = 0.0;
+    _hasCachedHeight = false;
+    _isCachedHeightExact = false;
 
     markNeedsLayout();
     markNeedsPaint();
@@ -4788,8 +4825,19 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     }
   }
 
-  void _deferLayout() {
+  void _deferLayout({required int lineDelta}) {
     _layoutDebounceTimer?.cancel();
+
+    // Apply layout immediately for small incremental edits (like pressing
+    // Enter) so caret position and gutter stay visually in sync.
+    if (lineDelta.abs() <= 4) {
+      _isDeferringLayout = false;
+      markNeedsLayout();
+      markNeedsPaint();
+      _scheduleCaretSyncAfterLayout();
+      return;
+    }
+
     _isDeferringLayout = true;
 
     if (_hasCachedHeight) {
@@ -4804,9 +4852,24 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     }
     markNeedsPaint();
 
-    _layoutDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+    _layoutDebounceTimer = Timer(const Duration(milliseconds: 24), () {
       _isDeferringLayout = false;
       markNeedsLayout();
+      _scheduleCaretSyncAfterLayout();
+    });
+  }
+
+  void _scheduleCaretSyncAfterLayout() {
+    if (_caretSyncAfterLayoutScheduled || _isFoldToggleInProgress) return;
+    _caretSyncAfterLayoutScheduled = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _caretSyncAfterLayoutScheduled = false;
+      if (!attached) return;
+      if (!vscrollController.hasClients || !hscrollController.hasClients) {
+        return;
+      }
+      _ensureCaretVisible();
     });
   }
 
@@ -4986,6 +5049,8 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       _indentGuideCache.clear();
       _indentEndLineCache.clear();
       _lineIndentCache.clear();
+      _caretInfoCache.clear();
+      _cachedCaretOffset = -1;
     }
 
     final dirtyRange = controller.dirtyRegion;
@@ -5037,6 +5102,9 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
           );
 
       _cachedLineCount = newLineCount;
+      _lineOffsetCache.clear();
+      _caretInfoCache.clear();
+      _cachedCaretOffset = -1;
 
       final startInvalidation = insertionLine > 0 ? insertionLine - 1 : 0;
       for (int i = startInvalidation; i <= newLineCount; i++) {
@@ -5108,7 +5176,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
         _invalidateFoldRanges(startInvalidation);
       }
 
-      _deferLayout();
+      _deferLayout(lineDelta: lineDelta);
     } else if (affectedLine != null) {
       _foldRanges.remove(affectedLine);
       if (affectedLine > 0) {
@@ -5796,81 +5864,6 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     }
 
     final hasActiveFolds = _hasActiveFolds;
-
-    if (controller.isBufferActive) {
-      final lineIndex = controller.bufferLineIndex!;
-      final columnIndex = controller.bufferCursorColumn;
-      final lineY = _getLineYOffset(lineIndex, hasActiveFolds);
-      final lineText = controller.bufferLineText ?? '';
-
-      final contentWidth =
-          size.width - _gutterWidth - (innerPadding?.horizontal ?? 0);
-      final paragraphWidth = lineWrap
-          ? _wrapWidth
-          : (isRTL ? contentWidth : null);
-
-      final para = _buildHighlightedParagraph(
-        lineIndex,
-        lineText,
-        width: paragraphWidth,
-      );
-      final clampedCol = columnIndex.clamp(0, lineText.length);
-
-      double caretX = 0.0;
-      double caretYInLine = 0.0;
-
-      if (isRTL) {
-        if (lineText.isEmpty) {
-          caretX = contentWidth;
-        } else if (clampedCol == 0) {
-          final boxes = para.getBoxesForRange(0, 1);
-          if (boxes.isNotEmpty) {
-            caretX = boxes.first.right;
-            caretYInLine = boxes.first.top;
-          } else {
-            caretX = contentWidth;
-          }
-        } else if (clampedCol >= lineText.length) {
-          final boxes = para.getBoxesForRange(
-            lineText.length - 1,
-            lineText.length,
-          );
-          if (boxes.isNotEmpty) {
-            caretX = boxes.first.left;
-            caretYInLine = boxes.first.top;
-          } else {
-            caretX = 0;
-          }
-        } else {
-          final boxes = para.getBoxesForRange(clampedCol - 1, clampedCol);
-          if (boxes.isNotEmpty) {
-            caretX = boxes.first.left;
-            caretYInLine = boxes.first.top;
-          } else {
-            caretX = contentWidth;
-          }
-        }
-      } else {
-        if (lineText.isEmpty) {
-          caretX = 0;
-        } else if (clampedCol > 0) {
-          final boxes = para.getBoxesForRange(clampedCol - 1, clampedCol);
-          if (boxes.isNotEmpty) {
-            caretX = boxes.first.right;
-            caretYInLine = boxes.first.top;
-          }
-        }
-      }
-
-      final ghostOffset = _getTotalVirtualOffset(lineIndex);
-
-      return (
-        lineIndex: lineIndex,
-        columnIndex: columnIndex,
-        offset: Offset(caretX, lineY + caretYInLine + ghostOffset),
-        height: _lineHeight,
-      );
-    }
 
     if (!isRTL && _caretInfoCache.containsKey(cursorOffset)) {
       return _caretInfoCache[cursorOffset]!;

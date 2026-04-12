@@ -256,7 +256,6 @@ sealed class LspConfig {
   ///
   /// This method is used internally by the [CodeForgeWeb] widget and calling it directly is not recommended.
   ///
-  /// [initialContent] must be provided as the document content since file reading is not supported on web.
   Future<void> openDocument(
     String filePath, {
     required String initialContent,
