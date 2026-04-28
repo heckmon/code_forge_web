@@ -2119,8 +2119,6 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
                                                       return KeyEventResult
                                                           .handled;
                                                     }
-                                                    _controller.backspace();
-
                                                     if (_controller
                                                         .hasMultiCursors) {
                                                       _controller
