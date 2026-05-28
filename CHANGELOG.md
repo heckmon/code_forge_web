@@ -50,3 +50,6 @@
 
 ## 2.9.0
  - Synced with code_forge 9.9.0
+
+## 2.10.0
+ - Synced with code_forge 9.10.0

@@ -377,6 +377,9 @@ class CodeForgeWebController implements DeltaTextInputClient {
     null,
   );
 
+  /// The [FocusNode] instance, used to control editor focus
+  FocusNode? focusNode;
+
   /// Configuration for Language Server Protocol integration.
   ///
   /// Enables advanced features like hover documentation, diagnostics,
@@ -414,8 +417,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
   /// (braces, indentation, etc.) when folding is enabled.
   Map<int, FoldRange?> get foldings => _foldings;
 
-  /// Use the setter to update this map — it rebuilds internal sorted caches
-  /// used for O(log n) fold-region lookups.
+  /// Set fold ranges in the editor
   set foldings(Map<int, FoldRange?> value) {
     _foldings = value;
     _rebuildFoldSortedCache();
@@ -1425,6 +1427,20 @@ class CodeForgeWebController implements DeltaTextInputClient {
   ///
   /// When true, the user cannot modify the text content.
   bool readOnly = false;
+
+  /// Use space instead of the `\t` character for tab key press.
+  bool useSpaceAsTab = false;
+
+  /// Custom tabSize for the editor.
+  int tabSize = 1;
+
+  /// The tabspace inserted on tab key press.
+  String get tabSpace {
+    if (useSpaceAsTab) {
+      return ' ' * tabSize;
+    }
+    return '\t' * tabSize;
+  }
 
   /// Whether the line structure has changed (lines added or removed).
   bool lineStructureChanged = false;
@@ -2662,7 +2678,11 @@ class CodeForgeWebController implements DeltaTextInputClient {
   @protected
   @override
   void connectionClosed() {
-    connection = null;
+    if (connection != null && connection!.attached) {
+      connection?.connectionClosedReceived();
+      connection = null;
+      focusNode?.unfocus();
+    }
   }
 
   @protected
@@ -2723,9 +2743,36 @@ class CodeForgeWebController implements DeltaTextInputClient {
     notifyListeners();
   }
 
+  Offset? Function()? getFloatingCursorStartPosition;
+  int Function(Offset)? getTextOffsetForFloatingCursorPosition;
+  Offset? _floatingCursorStartPosition;
+
   @protected
   @override
-  void updateFloatingCursor(RawFloatingCursorPoint point) {}
+  void updateFloatingCursor(RawFloatingCursorPoint point) {
+    if (readOnly) return;
+
+    switch (point.state) {
+      case FloatingCursorDragState.Start:
+        _floatingCursorStartPosition = getFloatingCursorStartPosition?.call();
+        break;
+      case FloatingCursorDragState.Update:
+        if (point.offset == null ||
+            _floatingCursorStartPosition == null ||
+            getTextOffsetForFloatingCursorPosition == null) {
+          return;
+        }
+        final targetPosition = _floatingCursorStartPosition! + point.offset!;
+        final newOffset = getTextOffsetForFloatingCursorPosition!(
+          targetPosition,
+        );
+        setSelectionSilently(TextSelection.collapsed(offset: newOffset));
+        break;
+      case FloatingCursorDragState.End:
+        _floatingCursorStartPosition = null;
+        break;
+    }
+  }
 
   /// Replace a range of text with new text.
   /// Used for clipboard operations and text manipulation.
@@ -2969,20 +3016,19 @@ class CodeForgeWebController implements DeltaTextInputClient {
       if (lineEnd == -1) lineEnd = text.length;
 
       final selectedBlock = text.substring(lineStart, lineEnd);
-      final unindentedBlock = selectedBlock
-          .split('\n')
+      final lines = selectedBlock.split('\n');
+      final unindentedBlock = lines
           .map(
-            (line) => line.startsWith('   ')
-                ? line.substring(3)
+            (line) => line.startsWith(tabSpace)
+                ? line.substring(tabSize)
                 : line.replaceFirst(RegExp(r'^ +'), ''),
           )
           .join('\n');
 
-      final lines = selectedBlock.split('\n');
       int removedChars = 0;
       for (final line in lines) {
-        if (line.startsWith('   ')) {
-          removedChars += 3;
+        if (line.startsWith(tabSpace)) {
+          removedChars += tabSize;
         } else {
           removedChars += RegExp(r'^ +').stringMatch(line)?.length ?? 0;
         }
@@ -2991,8 +3037,8 @@ class CodeForgeWebController implements DeltaTextInputClient {
       final newSelection = TextSelection(
         baseOffset:
             selection.baseOffset -
-            (lines.first.startsWith('   ')
-                ? 3
+            (lines.first.startsWith(tabSpace)
+                ? tabSize
                 : (RegExp(r'^ +').stringMatch(lines.first)?.length ?? 0)),
         extentOffset: selection.extentOffset - removedChars,
       );
@@ -3008,8 +3054,8 @@ class CodeForgeWebController implements DeltaTextInputClient {
       final line = text.substring(lineStart, lineEnd);
 
       int removeCount = 0;
-      if (line.startsWith('   ')) {
-        removeCount = 3;
+      if (line.startsWith(tabSpace)) {
+        removeCount = tabSize;
       } else {
         removeCount = RegExp(r'^ +').stringMatch(line)?.length ?? 0;
       }
@@ -3878,7 +3924,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
           final indentMatch = RegExp(r'^\s*').firstMatch(prevLine);
           final prevIndent = indentMatch?.group(0) ?? '';
           final shouldIndent = RegExp(r'[:{[(]\s*$').hasMatch(prevLine);
-          final extraIndent = shouldIndent ? '  ' : '';
+          final extraIndent = shouldIndent ? tabSpace : '';
           final indent = prevIndent + extraIndent;
           final openToClose = {'{': '}', '(': ')', '[': ']'};
           final trimmedPrev = prevLine.trimRight();
@@ -4361,4 +4407,7 @@ class CodeForgeWebController implements DeltaTextInputClient {
     }
     return set;
   }
+
+  @override
+  bool onFocusReceived() => true;
 }
