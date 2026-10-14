@@ -53,3 +53,7 @@
 
 ## 2.10.0
  - Synced with code_forge 9.10.0
+
+## 2.10.1
+ - Discontinuing
+   - Use [code_forge](https://pub.dev/packages/code_forge) instead

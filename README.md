@@ -1,4 +1,11 @@
-This is the web version of the powerful [code_forge](https://github.com/heckmon/code_Forge) package.
+## Discontinued
+
+The new version of [code_forge](https://pub.dev/packages/code_forge) has the web support and it has high performance compared to this package.
+<br>
+Hence, discontinuing this package. You can migrate to code_forge by simply changing the package name in pubspec.yaml. The APIs are same.
+<br>
+<br>
+<br>
 
 This package can load files from raw URLs and the `LspSocketConfig()` class can be used to enable [LSP](https://microsoft.github.io/language-server-protocol/) features, which makes the code_forge_web the ideal choice for browser based code editors.
 
