@@ -547,6 +547,7 @@ class _CodeForgeWebState extends State<CodeForgeWeb>
               inputType: widget.keyboardType,
               inputAction: TextInputAction.newline,
               autocorrect: false,
+              viewId: View.of(context).viewId,
             ),
           );
         }
